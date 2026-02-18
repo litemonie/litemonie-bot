@@ -1,0 +1,36 @@
+[
+  {
+    "id": "purchase_1769777872175_qa6tkkyyu",
+    "deviceId": "SAM-S22-001",
+    "userId": "1279640125",
+    "totalAmount": 325000,
+    "paymentPlan": "6months",
+    "totalWithInterest": 364000.00000000006,
+    "installmentAmount": 60667,
+    "numberOfPayments": 6,
+    "paymentIntervalDays": 30,
+    "interestRate": 12,
+    "status": "active",
+    "purchaseDate": "2026-01-30T12:57:52.175Z",
+    "nextPaymentDate": "2026-03-01T12:57:52.175Z",
+    "paymentsMade": 0,
+    "totalPaymentsMade": 0
+  },
+  {
+    "id": "purchase_1769777928830_sadc8lnsq",
+    "deviceId": "IPH-13-001",
+    "userId": "1279640125",
+    "totalAmount": 390000,
+    "paymentPlan": "6months",
+    "totalWithInterest": 436800.00000000006,
+    "installmentAmount": 72800,
+    "numberOfPayments": 6,
+    "paymentIntervalDays": 30,
+    "interestRate": 12,
+    "status": "active",
+    "purchaseDate": "2026-01-30T12:58:48.830Z",
+    "nextPaymentDate": "2026-03-01T12:58:48.830Z",
+    "paymentsMade": 0,
+    "totalPaymentsMade": 0
+  }
+]

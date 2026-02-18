@@ -1,34 +1,32 @@
-// app/sendmoney.js
+// app/sendmoney.js - FINAL FIXED VERSION WITH HEADER DEBUGGING
 const axios = require('axios');
 const { Markup } = require('telegraf');
 
-// Configuration with enhanced debugging
+// Configuration - REMOVED PERCENTAGE
 const CONFIG = {
-  MONNIFY_API_KEY: process.env.MONNIFY_API_KEY,
-  MONNIFY_SECRET_KEY: process.env.MONNIFY_SECRET_KEY,
-  MONNIFY_CONTRACT_CODE: process.env.MONNIFY_CONTRACT_CODE,
-  MONNIFY_BASE_URL: process.env.MONNIFY_BASE_URL || 'https://api.monnify.com',
-  MONNIFY_SOURCE_ACCOUNT: process.env.MONNIFY_SOURCE_ACCOUNT,
-  MONNIFY_SOURCE_NAME: process.env.MONNIFY_SOURCE_NAME,
-  MONNIFY_SOURCE_BVN: process.env.MONNIFY_SOURCE_BVN || '00000000000',
-  MONNIFY_SOURCE_BANK_CODE: process.env.MONNIFY_SOURCE_BANK_CODE,
-  TRANSFER_FEE_PERCENTAGE: 1.5,
+  KORA_API_KEY: process.env.KORA_API_KEY,               // Your Kora SECRET key 
+  KORA_BASE_URL: process.env.KORA_BASE_URL || 'https://api.korapay.com',
+  TRANSFER_FEE: 100,                                    // FLAT FEE - ₦100 fixed
   MIN_TRANSFER_AMOUNT: 100,
-  MAX_TRANSFER_AMOUNT: 1000000
+  MAX_TRANSFER_AMOUNT: 1000000,
+  BANKS_PER_PAGE: 10,
+  
+  // Sender information (not used in single payouts but kept for reference)
+  SENDER_NAME: process.env.SENDER_NAME || 'Liteway Technologies',
+  SENDER_EMAIL: process.env.SENDER_EMAIL || 'admin@liteway.com',
+  SENDER_PHONE: process.env.SENDER_PHONE || '+2348000000000',
+  
+  // Popular Nigerian banks including fintechs
+  POPULAR_BANK_CODES: ["044", "058", "033", "232", "011", "214", "057", "050", "070", "076", "100002", "100003", "100004", "100007", "999999", "999991", "999992", "999993"]
 };
 
-// Log configuration status on module load
-console.log('🔄 [SENDMONEY] Module loading...');
-console.log('🔍 [SENDMONEY] Checking environment variables:');
-console.log('🔍 MONNIFY_API_KEY:', CONFIG.MONNIFY_API_KEY ? `✓ Set (${CONFIG.MONNIFY_API_KEY.substring(0, 5)}...)` : '✗ MISSING');
-console.log('🔍 MONNIFY_SECRET_KEY:', CONFIG.MONNIFY_SECRET_KEY ? `✓ Set (${CONFIG.MONNIFY_SECRET_KEY.substring(0, 5)}...)` : '✗ MISSING');
-console.log('🔍 MONNIFY_CONTRACT_CODE:', CONFIG.MONNIFY_CONTRACT_CODE || '✗ MISSING');
-console.log('🔍 MONNIFY_SOURCE_ACCOUNT:', CONFIG.MONNIFY_SOURCE_ACCOUNT || '✗ MISSING');
-console.log('🔍 MONNIFY_SOURCE_NAME:', CONFIG.MONNIFY_SOURCE_NAME || '✗ MISSING');
-console.log('🔍 MONNIFY_SOURCE_BANK_CODE:', CONFIG.MONNIFY_SOURCE_BANK_CODE || '✗ MISSING');
-
-// Global sessions object that will be shared
+// Global sessions object
 const sendMoneySessions = {};
+
+// Store banks in memory for quick access
+let cachedBanks = [];
+let cacheTimestamp = 0;
+const CACHE_DURATION = 3600000; // 1 hour cache
 
 // Session management 
 const sessionManager = {
@@ -53,7 +51,7 @@ const sessionManager = {
       if (data) {
         Object.assign(sendMoneySessions[userId].data, data);
       }
-      console.log(`💼 [SENDMONEY] User ${userId} updated to step ${step}, data:`, data);
+      console.log(`💼 [SENDMONEY] User ${userId} updated to step ${step}`);
     }
   },
   
@@ -69,426 +67,632 @@ const sessionManager = {
   }
 };
 
-// Enhanced debug function for Monnify config
-function debugMonnifyConfig() {
-  console.log('🔍 [DEBUG] Monnify Configuration Details:');
-  
-  const configs = {
-    'MONNIFY_API_KEY': CONFIG.MONNIFY_API_KEY,
-    'MONNIFY_SECRET_KEY': CONFIG.MONNIFY_SECRET_KEY,
-    'MONNIFY_CONTRACT_CODE': CONFIG.MONNIFY_CONTRACT_CODE,
-    'MONNIFY_SOURCE_ACCOUNT': CONFIG.MONNIFY_SOURCE_ACCOUNT,
-    'MONNIFY_SOURCE_NAME': CONFIG.MONNIFY_SOURCE_NAME,
-    'MONNIFY_SOURCE_BANK_CODE': CONFIG.MONNIFY_SOURCE_BANK_CODE
-  };
-  
-  let allValid = true;
-  for (const [key, value] of Object.entries(configs)) {
-    const isValid = value && value !== 'undefined' && value !== 'null' && value.trim() !== '';
-    console.log(`  ${key}: ${isValid ? '✓' : '✗'} ${isValid ? '(Present)' : '(Missing/Empty)'}`);
-    if (!isValid) allValid = false;
-  }
-  
-  return allValid;
-}
-
 // Helper Functions
-async function getMonnifyToken() {
+async function getKoraHeaders() {
   try {
-    console.log('🔑 [SENDMONEY] Attempting to get Monnify token...');
+    console.log('🔑 [SENDMONEY] Setting up Kora API headers...');
     
-    if (!CONFIG.MONNIFY_API_KEY || !CONFIG.MONNIFY_SECRET_KEY) {
-      console.error('❌ [SENDMONEY] Missing API key or secret key');
-      throw new Error('Monnify credentials not configured');
+    if (!CONFIG.KORA_API_KEY) {
+      console.error('❌ [SENDMONEY] Missing Kora API key');
+      throw new Error('Kora API key not configured');
     }
     
-    const authString = Buffer.from(`${CONFIG.MONNIFY_API_KEY}:${CONFIG.MONNIFY_SECRET_KEY}`).toString('base64');
+    // Clean the API key - remove any whitespace
+    const cleanKey = CONFIG.KORA_API_KEY.toString().trim();
     
-    console.log(`🔑 [SENDMONEY] Making request to: ${CONFIG.MONNIFY_BASE_URL}/api/v1/auth/login`);
+    // Log first few characters of API key for debugging
+    const keyPreview = cleanKey.substring(0, 8) + '...';
+    console.log(`🔑 Using API key: ${keyPreview}`);
+    console.log(`🔑 Key length: ${cleanKey.length} characters`);
     
-    const response = await axios.post(
-      `${CONFIG.MONNIFY_BASE_URL}/api/v1/auth/login`,
-      {},
-      {
-        headers: {
-          'Authorization': `Basic ${authString}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      }
-    );
+    // Create headers object
+    const headers = {
+      'x-api-key': cleanKey,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
     
-    console.log('🔑 [SENDMONEY] Monnify token obtained successfully');
-    return response.data.responseBody.accessToken;
+    console.log('📤 Headers being sent:', JSON.stringify({
+      'x-api-key': keyPreview,
+      'Content-Type': headers['Content-Type'],
+      'Accept': headers['Accept']
+    }, null, 2));
+    
+    return headers;
   } catch (error) {
-    console.error('❌ [SENDMONEY] Monnify auth error:');
-    if (error.response) {
-      console.error('  Status:', error.response.status);
-      console.error('  Data:', error.response.data);
-    } else {
-      console.error('  Message:', error.message);
-    }
-    throw new Error('Failed to authenticate with Monnify');
+    console.error('❌ [SENDMONEY] Header setup error:', error.message);
+    throw new Error('Failed to setup Kora API headers');
   }
 }
 
 async function resolveBankAccount(accountNumber, bankCode) {
   try {
-    console.log(`🔍 [SENDMONEY] Resolving account: ${accountNumber}, bank: ${bankCode}`);
-    const token = await getMonnifyToken();
+    console.log(`🔍 [SENDMONEY] Resolving account via Kora: ${accountNumber}, bank: ${bankCode}`);
     
-    const response = await axios.get(
-      `${CONFIG.MONNIFY_BASE_URL}/api/v1/disbursements/account/validate`,
-      {
-        params: {
-          accountNumber: accountNumber,
-          bankCode: bankCode
-        },
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      }
-    );
-    
-    console.log('💼 [SENDMONEY] Account resolution response:', JSON.stringify(response.data, null, 2));
-    
-    if (response.data && response.data.responseBody) {
-      const responseBody = response.data.responseBody;
-      
-      // Handle cases where values might be undefined or "undefined"
-      return {
-        success: true,
-        accountName: responseBody.accountName && responseBody.accountName !== 'undefined' && responseBody.accountName !== 'null' 
-          ? responseBody.accountName 
-          : 'Account Holder Name',
-        accountNumber: responseBody.accountNumber && responseBody.accountNumber !== 'undefined' 
-          ? responseBody.accountNumber 
-          : accountNumber,
-        bankCode: responseBody.bankCode && responseBody.bankCode !== 'undefined' 
-          ? responseBody.bankCode 
-          : bankCode,
-        bankName: responseBody.bankName && responseBody.bankName !== 'undefined' && responseBody.bankName !== 'null'
-          ? responseBody.bankName 
-          : 'Selected Bank'
-      };
-    } else {
-      return {
-        success: false,
-        error: 'Invalid response from bank'
-      };
-    }
-  } catch (error) {
-    console.error('❌ [SENDMONEY] Account resolution error:');
-    if (error.response) {
-      console.error('  Status:', error.response.status);
-      console.error('  Data:', error.response.data);
-    } else {
-      console.error('  Message:', error.message);
-    }
-    return {
-      success: false,
-      error: error.response?.data?.responseMessage || 'Failed to resolve account'
-    };
-  }
-}
-
-async function getBanks() {
-  try {
-    console.log('🏦 [SENDMONEY] Fetching bank list...');
-    const token = await getMonnifyToken();
-    
-    const response = await axios.get(
-      `${CONFIG.MONNIFY_BASE_URL}/api/v1/banks`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      }
-    );
-    
-    console.log(`🏦 [SENDMONEY] Retrieved ${response.data.responseBody?.length || 0} banks`);
-    return response.data.responseBody;
-  } catch (error) {
-    console.error('❌ [SENDMONEY] Get banks error:');
-    if (error.response) {
-      console.error('  Status:', error.response.status);
-      console.error('  Data:', error.response.data);
-    } else {
-      console.error('  Message:', error.message);
-    }
-    
-    // Fallback bank list
-    console.log('🏦 [SENDMONEY] Using fallback bank list');
-    return [
-      { code: "044", name: "Access Bank" },
-      { code: "063", name: "Access Bank (Diamond)" },
-      { code: "050", name: "Ecobank Nigeria" },
-      { code: "070", name: "Fidelity Bank" },
-      { code: "011", name: "First Bank of Nigeria" },
-      { code: "214", name: "First City Monument Bank" },
-      { code: "058", name: "Guaranty Trust Bank" },
-      { code: "030", name: "Heritage Bank" },
-      { code: "301", name: "Jaiz Bank" },
-      { code: "082", name: "Keystone Bank" },
-      { code: "076", name: "Polaris Bank" },
-      { code: "101", name: "Providus Bank" },
-      { code: "221", name: "Stanbic IBTC Bank" },
-      { code: "068", name: "Standard Chartered Bank" },
-      { code: "232", name: "Sterling Bank" },
-      { code: "100", name: "Suntrust Bank" },
-      { code: "032", name: "Union Bank of Nigeria" },
-      { code: "033", name: "United Bank for Africa" },
-      { code: "215", name: "Unity Bank" },
-      { code: "035", name: "Wema Bank" },
-      { code: "057", name: "Zenith Bank" }
-    ];
-  }
-}
-
-async function initiateTransfer(transferData) {
-  try {
-    console.log('💸 [SENDMONEY] Initiating transfer...');
-    console.log('💸 Transfer data:', JSON.stringify(transferData, null, 2));
-    
-    const token = await getMonnifyToken();
-    
-    // Prepare sender info
-    const senderInfo = {
-      sourceAccountNumber: CONFIG.MONNIFY_SOURCE_ACCOUNT,
-      sourceAccountName: CONFIG.MONNIFY_SOURCE_NAME,
-      sourceAccountBvn: CONFIG.MONNIFY_SOURCE_BVN,
-      senderBankCode: CONFIG.MONNIFY_SOURCE_BANK_CODE
-    };
-    
-    console.log('💸 [SENDMONEY] Sender info:', senderInfo);
-    
-    // Prepare payload according to Monnify v2 API
-    const payload = {
-      amount: transferData.amount,
-      reference: transferData.reference,
-      narration: transferData.narration || `Transfer to ${transferData.accountName}`,
-      destinationBankCode: transferData.bankCode,
-      destinationAccountNumber: transferData.accountNumber,
-      destinationAccountName: transferData.accountName,
-      currency: "NGN",
-      sourceAccountNumber: CONFIG.MONNIFY_SOURCE_ACCOUNT,
-      async: true, // Use async to avoid waiting for OTP
-      senderInfo: senderInfo
-    };
-    
-    console.log('💸 [SENDMONEY] Monnify transfer payload:', JSON.stringify(payload, null, 2));
-    
-    // Use v2 API endpoint for transfers
-    const response = await axios.post(
-      `${CONFIG.MONNIFY_BASE_URL}/api/v2/disbursements/single`,
-      payload,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-    
-    console.log('💸 [SENDMONEY] Monnify transfer response:', JSON.stringify(response.data, null, 2));
-    
-    if (response.data.responseBody && response.data.responseBody.transactionReference) {
-      return {
-        success: true,
-        transactionReference: response.data.responseBody.transactionReference,
-        paymentReference: response.data.responseBody.paymentReference,
-        amount: response.data.responseBody.amount,
-        status: response.data.responseBody.status,
-        requiresOTP: response.data.responseBody.authorizationRequired || false,
-        message: response.data.responseMessage
-      };
-    } else {
-      return {
-        success: false,
-        error: response.data.responseMessage || 'Transfer initiation failed'
-      };
-    }
-    
-  } catch (error) {
-    console.error('❌ [SENDMONEY] Transfer initiation error:');
-    if (error.response) {
-      console.error('  Status:', error.response.status);
-      console.error('  Data:', JSON.stringify(error.response.data, null, 2));
-    } else {
-      console.error('  Message:', error.message);
-    }
-    return {
-      success: false,
-      error: error.response?.data?.responseMessage || 'Transfer failed',
-      fullError: error.response?.data
-    };
-  }
-}
-
-async function validateTransferOTP(reference, authorizationCode) {
-  try {
-    console.log(`🔐 [SENDMONEY] Validating OTP for reference: ${reference}`);
-    const token = await getMonnifyToken();
+    const headers = await getKoraHeaders();
     
     const response = await axios.post(
-      `${CONFIG.MONNIFY_BASE_URL}/api/v2/disbursements/single/validate-otp`,
+      `${CONFIG.KORA_BASE_URL}/merchant/api/v1/misc/banks/resolve`,
       {
-        reference: reference,
-        authorizationCode: authorizationCode
+        account: accountNumber,
+        bank: bankCode
       },
       {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
+        headers: headers,
+        timeout: 15000
       }
     );
     
-    console.log('🔐 [SENDMONEY] OTP validation response:', response.data);
-    return {
-      success: true,
-      status: response.data.responseBody?.status,
-      message: response.data.responseMessage
-    };
-    
-  } catch (error) {
-    console.error('❌ [SENDMONEY] OTP validation error:');
-    if (error.response) {
-      console.error('  Status:', error.response.status);
-      console.error('  Data:', error.response.data);
+    if (response.data && response.data.status === true && response.data.data) {
+      const data = response.data.data;
+      
+      return {
+        success: true,
+        accountName: data.account_name || 'Account Holder',
+        accountNumber: data.account_number || accountNumber,
+        bankCode: data.bank_code || bankCode,
+        bankName: data.bank_name || 'Selected Bank'
+      };
     } else {
-      console.error('  Message:', error.message);
+      return {
+        success: false,
+        error: response.data.message || 'Invalid response from bank'
+      };
+    }
+  } catch (error) {
+    console.error('❌ [SENDMONEY] Kora account resolution error:', error.message);
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Data:', error.response.data);
     }
     return {
       success: false,
-      error: error.response?.data?.responseMessage || 'OTP validation failed'
+      error: error.response?.data?.message || 'Failed to resolve account'
     };
   }
 }
 
-async function checkTransferStatus(transactionReference) {
+// Get banks with caching
+async function getBanks() {
+  if (cachedBanks.length > 0 && (Date.now() - cacheTimestamp) < CACHE_DURATION) {
+    return cachedBanks;
+  }
+  
   try {
-    console.log(`📊 [SENDMONEY] Checking transfer status: ${transactionReference}`);
-    const token = await getMonnifyToken();
+    console.log('🏦 [SENDMONEY] Fetching bank list from Kora...');
+    const headers = await getKoraHeaders();
     
     const response = await axios.get(
-      `${CONFIG.MONNIFY_BASE_URL}/api/v2/disbursements/single/transactions/${transactionReference}`,
+      `${CONFIG.KORA_BASE_URL}/merchant/api/v1/misc/banks`,
       {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+        params: { countryCode: 'NG' },
+        headers: headers,
+        timeout: 15000
+      }
+    );
+    
+    if (response.data && response.data.status === true && response.data.data) {
+      const banks = response.data.data
+        .filter(bank => bank.name && bank.code)
+        .map(bank => ({
+          code: bank.code,
+          name: bank.name,
+          slug: bank.slug,
+          country: bank.country
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      
+      cachedBanks = banks;
+      cacheTimestamp = Date.now();
+      console.log(`✅ [SENDMONEY] Loaded ${banks.length} banks`);
+      return banks;
+    } else {
+      throw new Error('Invalid response from Kora API');
+    }
+  } catch (error) {
+    console.error('❌ [SENDMONEY] Get banks error:', error.message);
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Data:', error.response.data);
+      
+      // If 401, provide clear error message
+      if (error.response.status === 401) {
+        console.error('❌ Invalid Kora API key. Please check your KORA_API_KEY in .env file');
+      }
+    }
+    
+    if (cachedBanks.length > 0) {
+      return cachedBanks;
+    }
+    
+    return getComprehensiveBanks();
+  }
+}
+
+// Comprehensive bank list including fintechs (fallback)
+function getComprehensiveBanks() {
+  return [
+    { code: "044", name: "Access Bank" },
+    { code: "063", name: "Access Bank (Diamond)" },
+    { code: "050", name: "Ecobank Nigeria" },
+    { code: "070", name: "Fidelity Bank" },
+    { code: "011", name: "First Bank of Nigeria" },
+    { code: "214", name: "First City Monument Bank (FCMB)" },
+    { code: "058", name: "Guaranty Trust Bank (GTBank)" },
+    { code: "030", name: "Heritage Bank" },
+    { code: "301", name: "Jaiz Bank" },
+    { code: "082", name: "Keystone Bank" },
+    { code: "076", name: "Polaris Bank" },
+    { code: "101", name: "Providus Bank" },
+    { code: "221", name: "Stanbic IBTC Bank" },
+    { code: "068", name: "Standard Chartered Bank" },
+    { code: "232", name: "Sterling Bank" },
+    { code: "100", name: "Suntrust Bank" },
+    { code: "032", name: "Union Bank of Nigeria" },
+    { code: "033", name: "United Bank for Africa (UBA)" },
+    { code: "215", name: "Unity Bank" },
+    { code: "035", name: "Wema Bank" },
+    { code: "057", name: "Zenith Bank" },
+    { code: "999991", name: "Kuda Bank" },
+    { code: "100002", name: "OPay" },
+    { code: "100003", name: "PalmPay" },
+    { code: "100004", name: "Moniepoint MFB" },
+    { code: "100007", name: "VFD MFB" },
+    { code: "999999", name: "Rubies MFB" },
+    { code: "999992", name: "Mint MFB" },
+    { code: "999993", name: "Sparkle MFB" },
+    { code: "999994", name: "FairMoney MFB" },
+    { code: "999995", name: "Carbon" },
+    { code: "999996", name: "ALAT by Wema" },
+    { code: "999997", name: "Eyowo" },
+    { code: "999998", name: "OnePipe" },
+    { code: "801", name: "Coronation Merchant Bank" },
+    { code: "614", name: "FSDH Merchant Bank" },
+    { code: "502", name: "Rand Merchant Bank" },
+    { code: "508", name: "Suntrust Bank Nigeria" },
+    { code: "513", name: "ALAT by Wema" },
+    { code: "999", name: "Fortis Mobile" }
+  ].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Search banks by name
+function searchBanks(banks, query) {
+  if (!query || query.trim() === '') return [];
+  
+  const searchTerm = query.toLowerCase().trim();
+  return banks.filter(bank => 
+    bank.name.toLowerCase().includes(searchTerm)
+  ).slice(0, 10);
+}
+
+// Get popular banks
+function getPopularBanks(banks) {
+  if (banks.length > 0 && banks[0].code) {
+    return banks.filter(bank => 
+      CONFIG.POPULAR_BANK_CODES.includes(bank.code)
+    ).sort((a, b) => {
+      const indexA = CONFIG.POPULAR_BANK_CODES.indexOf(a.code);
+      const indexB = CONFIG.POPULAR_BANK_CODES.indexOf(b.code);
+      return indexA - indexB;
+    });
+  }
+  
+  return [
+    { code: "044", name: "Access Bank" },
+    { code: "058", name: "GTBank" },
+    { code: "033", name: "UBA" },
+    { code: "011", name: "First Bank" },
+    { code: "057", name: "Zenith Bank" },
+    { code: "214", name: "FCMB" },
+    { code: "232", name: "Sterling Bank" },
+    { code: "070", name: "Fidelity Bank" },
+    { code: "050", name: "Ecobank" },
+    { code: "076", name: "Polaris Bank" },
+    { code: "999991", name: "Kuda Bank" },
+    { code: "100002", name: "OPay" },
+    { code: "100003", name: "PalmPay" },
+    { code: "100004", name: "Moniepoint MFB" },
+    { code: "100007", name: "VFD MFB" },
+    { code: "999999", name: "Rubies MFB" }
+  ];
+}
+
+// Create bank selection keyboard
+function createBankKeyboard(banks, page = 0, searchQuery = '') {
+  const buttons = [];
+  const banksPerPage = CONFIG.BANKS_PER_PAGE;
+  const startIndex = page * banksPerPage;
+  const endIndex = startIndex + banksPerPage;
+  const paginatedBanks = banks.slice(startIndex, endIndex);
+  
+  if (searchQuery) {
+    buttons.push([
+      Markup.button.callback(`🔍 Results for: "${searchQuery.substring(0, 15)}..."`, 'no_action')
+    ]);
+  }
+  
+  paginatedBanks.forEach(bank => {
+    let emoji = "🏦";
+    
+    if (bank.name.includes("OPay") || bank.code === "100002") emoji = "📱";
+    else if (bank.name.includes("PalmPay") || bank.code === "100003") emoji = "🌴";
+    else if (bank.name.includes("Moniepoint") || bank.code === "100004") emoji = "💳";
+    else if (bank.name.includes("Kuda") || bank.code === "999991") emoji = "⚡";
+    else if (bank.name.includes("Rubies") || bank.code === "999999") emoji = "💎";
+    else if (bank.name.includes("VFD") || bank.code === "100007") emoji = "🏢";
+    else if (bank.name.includes("Sparkle") || bank.code === "999993") emoji = "✨";
+    
+    const displayName = bank.name.length > 25 ? bank.name.substring(0, 22) + '...' : bank.name;
+    buttons.push([
+      Markup.button.callback(`${emoji} ${displayName}`, `sendmoney_bank_${bank.code}`)
+    ]);
+  });
+  
+  const navRow = [];
+  if (page > 0) {
+    navRow.push(Markup.button.callback('⬅️ Previous', `sendmoney_banks_page_${page - 1}_${searchQuery}`));
+  }
+  if (endIndex < banks.length) {
+    navRow.push(Markup.button.callback('Next ➡️', `sendmoney_banks_page_${page + 1}_${searchQuery}`));
+  }
+  if (navRow.length > 0) {
+    buttons.push(navRow);
+  }
+  
+  buttons.push([
+    Markup.button.callback('🔍 Search Bank', 'sendmoney_search_bank')
+  ]);
+  
+  if (!searchQuery) {
+    buttons.push([
+      Markup.button.callback('⭐ Popular Banks', 'sendmoney_popular_banks'),
+      Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')
+    ]);
+  }
+  
+  buttons.push([
+    Markup.button.callback('🔄 Refresh', 'sendmoney_refresh_banks'),
+    Markup.button.callback('❌ Cancel', 'start')
+  ]);
+  
+  return Markup.inlineKeyboard(buttons);
+}
+
+// FIXED: CORRECT Kora API payload structure based on official documentation
+async function initiateTransfer(transferData, userInfo = null) {
+  try {
+    console.log('💸 [SENDMONEY] Initiating transfer via Kora...');
+    console.log('📤 Transfer Data:', JSON.stringify(transferData, null, 2));
+    
+    const headers = await getKoraHeaders(); // Now using x-api-key
+    const reference = `KPY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    let narration = transferData.narration || `Transfer to ${transferData.accountName}`;
+    if (userInfo) {
+      const senderName = userInfo.name || userInfo.username || `User ${userInfo.id}`;
+      narration = `From ${senderName}: ${narration}`;
+    }
+    
+    // Split the account name into first and last name (if possible)
+    const nameParts = transferData.accountName.split(' ');
+    const firstName = nameParts[0] || transferData.accountName;
+    const lastName = nameParts.slice(1).join(' ') || 'Customer';
+    
+    // Get bank name from bank code
+    const bankName = transferData.bankName || getBankNameFromCode(transferData.bankCode);
+    
+    // CORRECT payload based on Kora API documentation
+    const payload = {
+      reference: reference,
+      destination: {
+        bank_account: {
+          bank_name: bankName,
+          account: transferData.accountNumber,
+          account_name: transferData.accountName,
+          beneficiary_type: "individual",
+          first_name: firstName,
+          last_name: lastName,
+          account_number_type: "account_number",
+          payment_method: "NIP",
+          address_information: {
+            country: "NG",
+            city: "Lagos",
+            state: "Lagos",
+            zip_code: "100001",
+            street: "Street Address",
+            full_address: "Street Address, Lagos, Nigeria"
+          }
         },
+        type: "bank_account",
+        amount: transferData.amount,
+        currency: "NGN",
+        narration: narration,
+        customer: {
+          name: transferData.accountName,
+          email: `${transferData.accountName.replace(/\s+/g, '').toLowerCase()}@customer.com`
+        }
+      }
+    };
+    
+    console.log('📤 Kora API Payload:', JSON.stringify(payload, null, 2));
+    
+    // Make the request with explicit headers
+    const response = await axios({
+      method: 'post',
+      url: `${CONFIG.KORA_BASE_URL}/merchant/api/v1/transactions/disburse`,
+      data: payload,
+      headers: headers,
+      timeout: 30000
+    });
+    
+    console.log('📥 Kora API Response:', JSON.stringify(response.data, null, 2));
+    
+    if (response.data && response.data.status === true) {
+      return {
+        success: true,
+        reference: reference,
+        koraReference: response.data.data?.reference || reference,
+        amount: response.data.data?.amount || transferData.amount,
+        fee: response.data.data?.fee || CONFIG.TRANSFER_FEE,
+        status: response.data.data?.status || 'processing',
+        message: response.data.message || 'Transfer initiated successfully'
+      };
+    } else {
+      console.error('❌ Kora API Error Response:', response.data);
+      return {
+        success: false,
+        error: response.data.message || 'Transfer initiation failed',
+        details: response.data
+      };
+    }
+    
+  } catch (error) {
+    console.error('❌ [SENDMONEY] Kora transfer initiation error:', error.message);
+    if (error.response) {
+      console.error('❌ Kora Error Status:', error.response.status);
+      console.error('❌ Kora Error Data:', JSON.stringify(error.response.data, null, 2));
+      
+      // Provide more helpful error messages based on status code
+      let errorMessage = 'Transfer failed';
+      if (error.response.status === 401) {
+        errorMessage = 'Invalid API key. Please check your KORA_API_KEY.';
+      } else if (error.response.status === 422) {
+        if (error.response.data?.data) {
+          const errors = Object.entries(error.response.data.data)
+            .map(([field, err]) => `${field}: ${err.message}`)
+            .join(', ');
+          errorMessage = `Validation error: ${errors}`;
+        } else {
+          errorMessage = 'Invalid transfer details. Please check recipient account and bank details.';
+        }
+      } else if (error.response.status === 400) {
+        errorMessage = 'Bad request. Please verify all transfer details.';
+      }
+      
+      return {
+        success: false,
+        error: errorMessage,
+        details: error.response.data
+      };
+    }
+    return {
+      success: false,
+      error: error.message || 'Transfer failed'
+    };
+  }
+}
+
+// Helper function to get bank name from bank code
+function getBankNameFromCode(bankCode) {
+  const bankMap = {
+    "044": "Access Bank",
+    "063": "Access Bank (Diamond)",
+    "050": "Ecobank Nigeria",
+    "070": "Fidelity Bank",
+    "011": "First Bank of Nigeria",
+    "214": "First City Monument Bank (FCMB)",
+    "058": "Guaranty Trust Bank (GTBank)",
+    "030": "Heritage Bank",
+    "301": "Jaiz Bank",
+    "082": "Keystone Bank",
+    "076": "Polaris Bank",
+    "101": "Providus Bank",
+    "221": "Stanbic IBTC Bank",
+    "068": "Standard Chartered Bank",
+    "232": "Sterling Bank",
+    "100": "Suntrust Bank",
+    "032": "Union Bank of Nigeria",
+    "033": "United Bank for Africa (UBA)",
+    "215": "Unity Bank",
+    "035": "Wema Bank",
+    "057": "Zenith Bank",
+    "999991": "Kuda Bank",
+    "100002": "OPay",
+    "100003": "PalmPay",
+    "100004": "Moniepoint MFB",
+    "100007": "VFD MFB",
+    "999999": "Rubies MFB",
+    "999992": "Mint MFB",
+    "999993": "Sparkle MFB",
+    "999994": "FairMoney MFB",
+    "999995": "Carbon",
+    "999996": "ALAT by Wema",
+    "999997": "Eyowo",
+    "999998": "OnePipe",
+    "801": "Coronation Merchant Bank",
+    "614": "FSDH Merchant Bank",
+    "502": "Rand Merchant Bank",
+    "508": "Suntrust Bank Nigeria",
+    "513": "ALAT by Wema",
+    "999": "Fortis Mobile"
+  };
+  
+  return bankMap[bankCode] || 'Selected Bank';
+}
+
+async function getTransferStatus(reference) {
+  try {
+    console.log(`📊 [SENDMONEY] Checking transfer status for: ${reference}`);
+    
+    const headers = await getKoraHeaders();
+    
+    const response = await axios.get(
+      `${CONFIG.KORA_BASE_URL}/merchant/api/v1/payouts`,
+      {
+        params: { reference: reference },
+        headers: headers,
         timeout: 10000
       }
     );
     
+    if (response.data && response.data.data) {
+      const payoutData = response.data.data;
+      const transaction = Array.isArray(payoutData) 
+        ? payoutData.find(t => t.reference === reference)
+        : payoutData;
+      
+      if (transaction) {
+        return {
+          success: true,
+          status: transaction.status || 'unknown',
+          amount: transaction.amount,
+          fee: transaction.fee,
+          message: transaction.message || 'Transaction found',
+          completedAt: transaction.date_completed
+        };
+      }
+    }
+    
     return {
       success: true,
-      status: response.data.responseBody?.status,
-      transaction: response.data.responseBody
+      status: 'processing',
+      message: 'Transaction is being processed'
     };
     
   } catch (error) {
-    console.error('❌ [SENDMONEY] Transfer status check error:');
-    if (error.response) {
-      console.error('  Status:', error.response.status);
-      console.error('  Data:', error.response.data);
-    } else {
-      console.error('  Message:', error.message);
-    }
+    console.error('❌ [SENDMONEY] Status check error:', error.message);
     return {
       success: false,
-      error: error.response?.data?.responseMessage || 'Failed to check status'
+      error: 'Unable to check status'
     };
   }
 }
 
 function formatCurrency(amount) {
-  return `₦${amount.toLocaleString('en-NG')}`;
+  return `₦${Math.floor(amount).toLocaleString('en-NG')}`;
 }
 
+// FIXED: PROPER MarkdownV2 escaping function
 function escapeMarkdown(text) {
-  if (typeof text !== 'string') return text;
-  const specialChars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
-  let escapedText = text;
-  specialChars.forEach(char => {
-    const regex = new RegExp(`\\${char}`, 'g');
-    escapedText = escapedText.replace(regex, `\\${char}`);
-  });
-  return escapedText;
+  if (typeof text !== 'string') return String(text);
+  
+  // List of all special characters in MarkdownV2 that need escaping
+  // _ * [ ] ( ) ~ ` > # + - = | { } . !
+  const specialChars = [
+    '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+  ];
+  
+  let escaped = '';
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (specialChars.includes(char)) {
+      escaped += '\\' + char;
+    } else {
+      escaped += char;
+    }
+  }
+  
+  return escaped;
 }
 
-// Enhanced isMonnifyConfigured function with detailed logging
-function isMonnifyConfigured() {
-  console.log('🔍 [SENDMONEY] Checking Monnify configuration...');
+function isKoraConfigured() {
+  console.log('🔍 [SENDMONEY] Checking Kora configuration...');
   
   const configs = {
-    'API_KEY': CONFIG.MONNIFY_API_KEY,
-    'SECRET_KEY': CONFIG.MONNIFY_SECRET_KEY,
-    'CONTRACT_CODE': CONFIG.MONNIFY_CONTRACT_CODE,
-    'SOURCE_ACCOUNT': CONFIG.MONNIFY_SOURCE_ACCOUNT,
-    'SOURCE_NAME': CONFIG.MONNIFY_SOURCE_NAME,
-    'SOURCE_BANK_CODE': CONFIG.MONNIFY_SOURCE_BANK_CODE
+    'KORA_API_KEY': CONFIG.KORA_API_KEY,
+    'SENDER_NAME': CONFIG.SENDER_NAME,
+    'SENDER_EMAIL': CONFIG.SENDER_EMAIL,
+    'SENDER_PHONE': CONFIG.SENDER_PHONE
   };
   
   let allValid = true;
   for (const [key, value] of Object.entries(configs)) {
     const isValid = value && value !== 'undefined' && value !== 'null' && value.toString().trim() !== '';
-    console.log(`  MONNIFY_${key}: ${isValid ? '✓' : '✗'}`);
     if (!isValid) allValid = false;
   }
   
-  console.log(`🔍 [SENDMONEY] Configuration check result: ${allValid ? 'PASS' : 'FAIL'}`);
   return allValid;
 }
 
-// Main handler with enhanced debugging
+// Test Kora API connection
+async function testKoraConnection() {
+  try {
+    console.log('🧪 Testing Kora API connection...');
+    const headers = await getKoraHeaders();
+    
+    console.log('📤 Making test request with headers:', JSON.stringify({
+      'x-api-key': headers['x-api-key'].substring(0, 8) + '...',
+      'Content-Type': headers['Content-Type']
+    }, null, 2));
+    
+    const response = await axios.get(
+      `${CONFIG.KORA_BASE_URL}/merchant/api/v1/misc/banks`,
+      {
+        params: { countryCode: 'NG' },
+        headers: headers,
+        timeout: 10000
+      }
+    );
+    
+    if (response.data && response.data.status === true) {
+      console.log('✅ Kora API connection successful!');
+      console.log(`📊 Found ${response.data.data?.length || 0} banks`);
+      return { success: true, message: 'Kora API connection successful' };
+    } else {
+      console.error('❌ Kora API returned unexpected response');
+      return { success: false, message: 'Unexpected API response' };
+    }
+  } catch (error) {
+    console.error('❌ Kora API test failed:', error.message);
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Data:', error.response.data);
+      
+      if (error.response.status === 401) {
+        return { success: false, message: 'Invalid API key (401 Unauthorized)' };
+      }
+      return { success: false, message: `API Error: ${error.response.status}` };
+    }
+    return { success: false, message: error.message };
+  }
+}
+
+// Main handler - WITH KYC INTEGRATION
 async function handleSendMoney(ctx, users, transactions) {
   try {
     const userId = ctx.from.id.toString();
-    console.log(`🚀 [SENDMONEY] ==== STARTING SEND MONEY FLOW ====`);
-    console.log(`🚀 [SENDMONEY] User ID: ${userId}`);
-    console.log(`🚀 [SENDMONEY] Chat ID: ${ctx.chat.id}`);
-    
-    // Check KYC
     const user = users[userId];
+    
     if (!user) {
-      console.log(`❌ [SENDMONEY] User ${userId} not found in database`);
       return await ctx.reply(
-        '❌ User not found. Please use /start first.',
+        '❌ User not found\\. Please use /start first\\.',
         { parse_mode: 'MarkdownV2' }
       );
     }
     
-    console.log(`👤 [SENDMONEY] User found:`, {
-      id: userId,
-      kycStatus: user.kycStatus,
-      hasPin: !!user.pin,
-      wallet: user.wallet
-    });
-    
+    // KYC check
     if (user.kycStatus !== 'approved') {
-      console.log(`❌ [SENDMONEY] KYC not approved for ${userId}. Status: ${user.kycStatus}`);
       return await ctx.reply(
         '❌ *KYC VERIFICATION REQUIRED*\n\n' +
         '📝 Your account needs verification\\.\n\n' +
         '🛂 *To Get Verified\\:*\n' +
-        'Contact @opuenekeke with your User ID',
+        'Complete your KYC using the 🛂 KYC Status menu option\n' +
+        'or contact @opuenekeke with your User ID',
         { parse_mode: 'MarkdownV2' }
       );
     }
     
-    console.log(`✅ [SENDMONEY] KYC check passed for ${userId}`);
-    
-    // Check PIN
     if (!user.pin) {
-      console.log(`❌ [SENDMONEY] PIN not set for ${userId}`);
       return await ctx.reply(
         '❌ *TRANSACTION PIN NOT SET*\n\n' +
         '🔐 Set PIN\\: `/setpin 1234`',
@@ -496,112 +700,95 @@ async function handleSendMoney(ctx, users, transactions) {
       );
     }
     
-    console.log(`✅ [SENDMONEY] PIN check passed for ${userId}`);
-    
-    // Enhanced Monnify configuration check
-    console.log(`🔍 [SENDMONEY] ==== CHECKING MONNIFY CONFIGURATION ====`);
-    const isConfigured = isMonnifyConfigured();
-    
-    if (!isConfigured) {
-      console.error(`❌ [SENDMONEY] Monnify configuration failed for user ${userId}`);
-      console.error(`❌ [SENDMONEY] Missing/Invalid variables:`);
-      
-      const missing = [];
-      if (!CONFIG.MONNIFY_API_KEY) missing.push('MONNIFY_API_KEY');
-      if (!CONFIG.MONNIFY_SECRET_KEY) missing.push('MONNIFY_SECRET_KEY');
-      if (!CONFIG.MONNIFY_CONTRACT_CODE) missing.push('MONNIFY_CONTRACT_CODE');
-      if (!CONFIG.MONNIFY_SOURCE_ACCOUNT) missing.push('MONNIFY_SOURCE_ACCOUNT');
-      if (!CONFIG.MONNIFY_SOURCE_NAME) missing.push('MONNIFY_SOURCE_NAME');
-      if (!CONFIG.MONNIFY_SOURCE_BANK_CODE) missing.push('MONNIFY_SOURCE_BANK_CODE');
-      
-      console.error(`❌ [SENDMONEY] Missing: ${missing.join(', ')}`);
-      
-      // For debugging, show what we have
-      console.log(`🔍 [SENDMONEY] Current CONFIG values:`);
-      console.log(`  MONNIFY_API_KEY: "${CONFIG.MONNIFY_API_KEY}"`);
-      console.log(`  MONNIFY_SECRET_KEY: "${CONFIG.MONNIFY_SECRET_KEY ? '[HIDDEN]' : 'MISSING'}"`);
-      console.log(`  MONNIFY_CONTRACT_CODE: "${CONFIG.MONNIFY_CONTRACT_CODE}"`);
-      console.log(`  MONNIFY_SOURCE_ACCOUNT: "${CONFIG.MONNIFY_SOURCE_ACCOUNT}"`);
-      console.log(`  MONNIFY_SOURCE_NAME: "${CONFIG.MONNIFY_SOURCE_NAME}"`);
-      console.log(`  MONNIFY_SOURCE_BANK_CODE: "${CONFIG.MONNIFY_SOURCE_BANK_CODE}"`);
-      
+    if (!isKoraConfigured()) {
       return await ctx.reply(
         '❌ *BANK TRANSFER SERVICE UNAVAILABLE*\n\n' +
-        'Bank transfers are currently disabled\\.\n\n' +
-        '⚠️ *Configuration Issue*\n' +
-        '📞 Contact admin for assistance\\.\n\n' +
-        `*Debug Info:* Config check failed\\_`,
+        'Contact admin for assistance\\.',
         { parse_mode: 'MarkdownV2' }
       );
     }
     
-    console.log(`✅ [SENDMONEY] Monnify configuration check passed`);
-    
-    // Check balance
-    console.log(`💰 [SENDMONEY] Checking balance: ${user.wallet}, Min required: ${CONFIG.MIN_TRANSFER_AMOUNT}`);
     if (user.wallet < CONFIG.MIN_TRANSFER_AMOUNT) {
-      console.log(`❌ [SENDMONEY] Insufficient balance for ${userId}: ${user.wallet} < ${CONFIG.MIN_TRANSFER_AMOUNT}`);
       return await ctx.reply(
         `❌ *INSUFFICIENT BALANCE*\n\n` +
-        `💵 Your Balance\\: ${formatCurrency(user.wallet)}\n` +
-        `💰 Minimum Transfer\\: ${formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT)}\n\n` +
+        `💵 Your Balance\\: ${escapeMarkdown(formatCurrency(user.wallet))}\n` +
+        `💰 Minimum Transfer\\: ${escapeMarkdown(formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT))}\n\n` +
         `💳 Use "💳 Deposit Funds" to add money`,
         { parse_mode: 'MarkdownV2' }
       );
     }
     
-    console.log(`✅ [SENDMONEY] Balance check passed: ${formatCurrency(user.wallet)}`);
-    
-    // Start session
-    console.log(`💼 [SENDMONEY] Starting session for user ${userId}`);
     sessionManager.startSession(userId, 'send_money');
     
-    // Get banks and show selection
-    console.log(`🏦 [SENDMONEY] Fetching bank list...`);
     const banks = await getBanks();
-    console.log(`🏦 [SENDMONEY] Got ${banks.length} banks`);
+    const popularBanks = getPopularBanks(banks);
     
-    // Create bank buttons
-    const bankButtons = [];
-    const banksPerRow = 2;
+    const initialButtons = [];
     
-    for (let i = 0; i < banks.length; i += banksPerRow) {
-      const row = [];
-      for (let j = 0; j < banksPerRow && i + j < banks.length; j++) {
-        const bank = banks[i + j];
-        row.push(Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`));
-      }
-      bankButtons.push(row);
-    }
-    
-    bankButtons.push([
-      Markup.button.callback('🔄 Refresh Banks', 'sendmoney_refresh_banks'),
-      Markup.button.callback('⬅️ Cancel', 'start')
+    initialButtons.push([
+      Markup.button.callback('📱 FINTECH BANKS', 'no_action')
     ]);
     
-    console.log(`📤 [SENDMONEY] Sending bank selection to user ${userId}`);
+    const fintechBanks = popularBanks.filter(bank => 
+      ["100002", "100003", "100004", "999991", "100007", "999999"].includes(bank.code)
+    ).slice(0, 4);
+    
+    fintechBanks.forEach(bank => {
+      let emoji = "📱";
+      if (bank.code === "100003") emoji = "🌴";
+      else if (bank.code === "100004") emoji = "💳";
+      else if (bank.code === "999991") emoji = "⚡";
+      
+      initialButtons.push([
+        Markup.button.callback(`${emoji} ${bank.name}`, `sendmoney_bank_${bank.code}`)
+      ]);
+    });
+    
+    initialButtons.push([
+      Markup.button.callback('🏦 TRADITIONAL BANKS', 'no_action')
+    ]);
+    
+    const traditionalBanks = popularBanks.filter(bank => 
+      !["100002", "100003", "100004", "999991", "100007", "999999"].includes(bank.code)
+    ).slice(0, 6);
+    
+    traditionalBanks.forEach(bank => {
+      initialButtons.push([
+        Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`)
+      ]);
+    });
+    
+    initialButtons.push([
+      Markup.button.callback('🔍 Search Bank', 'sendmoney_search_bank'),
+      Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')
+    ]);
+    
+    initialButtons.push([
+      Markup.button.callback('🔄 Refresh', 'sendmoney_refresh_banks'),
+      Markup.button.callback('❌ Cancel', 'start')
+    ]);
+    
+    const balanceText = escapeMarkdown(formatCurrency(user.wallet));
+    const minText = escapeMarkdown(formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT));
+    const maxText = escapeMarkdown(formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT));
     
     await ctx.reply(
       `🏦 *TRANSFER TO BANK ACCOUNT*\n\n` +
-      `💵 *Your Balance\\:* ${formatCurrency(user.wallet)}\n` +
-      `💸 *Transfer Fee\\:* ${CONFIG.TRANSFER_FEE_PERCENTAGE}%\n` +
-      `💰 *Min\\:* ${formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT)} \\| *Max\\:* ${formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT)}\n\n` +
+      `🔐 *Powered by KoraPay*\n\n` +
+      `💵 *Your Balance\\:* ${balanceText}\n` +
+      `💸 *Transfer Fee\\:* ₦100 flat\n` +
+      `💰 *Min\\:* ${minText} \\| *Max\\:* ${maxText}\n\n` +
       `📋 *Select Bank\\:*`,
       {
         parse_mode: 'MarkdownV2',
-        ...Markup.inlineKeyboard(bankButtons)
+        ...Markup.inlineKeyboard(initialButtons)
       }
     );
     
-    console.log(`✅ [SENDMONEY] Send money flow initialized successfully for ${userId}`);
-    
   } catch (error) {
     console.error('❌ [SENDMONEY] Send money handler error:', error);
-    console.error('❌ [SENDMONEY] Error stack:', error.stack);
     await ctx.reply(
-      '❌ *TRANSFER ERROR*\n\n' +
-      'Failed to initialize transfer\\. Please try again\\.\n\n' +
-      `*Error\\:* ${escapeMarkdown(error.message)}`,
+      '❌ *TRANSFER ERROR*\n\nFailed to initialize transfer\\. Please try again\\.',
       { parse_mode: 'MarkdownV2' }
     );
   }
@@ -610,72 +797,207 @@ async function handleSendMoney(ctx, users, transactions) {
 // Handle callback queries
 function getCallbacks(bot, users, transactions, CONFIG) {
   return {
-    // Refresh banks list
-    'sendmoney_refresh_banks': async (ctx) => {
+    'sendmoney_all_banks': async (ctx) => {
       try {
         const userId = ctx.from.id.toString();
-        console.log(`🔄 [SENDMONEY] Refreshing banks for user ${userId}`);
-        
         const banks = await getBanks();
-        const bankButtons = [];
-        const banksPerRow = 2;
-        
-        for (let i = 0; i < banks.length; i += banksPerRow) {
-          const row = [];
-          for (let j = 0; j < banksPerRow && i + j < banks.length; j++) {
-            const bank = banks[i + j];
-            row.push(Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`));
-          }
-          bankButtons.push(row);
-        }
-        
-        bankButtons.push([
-          Markup.button.callback('🔄 Refresh Banks', 'sendmoney_refresh_banks'),
-          Markup.button.callback('⬅️ Cancel', 'start')
-        ]);
+        const keyboard = createBankKeyboard(banks, 0, '');
         
         await ctx.editMessageText(
-          `🏦 *TRANSFER TO BANK ACCOUNT*\n\n` +
-          `💵 *Your Balance\\:* ${formatCurrency(users[userId]?.wallet || 0)}\n` +
-          `💸 *Transfer Fee\\:* ${CONFIG.TRANSFER_FEE_PERCENTAGE}%\n` +
-          `💰 *Min\\:* ${formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT)} \\| *Max\\:* ${formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT)}\n\n` +
-          `📋 *Select Bank\\:*`,
+          `🏦 *SELECT BANK*\n\n` +
+          `🔐 *Powered by KoraPay*\n\n` +
+          `📋 *All Banks \\(A\\-Z\\)*\n` +
+          `📊 Total: ${banks.length} banks\n\n` +
+          `Use the buttons below to navigate\\:`,
           {
             parse_mode: 'MarkdownV2',
-            ...Markup.inlineKeyboard(bankButtons)
+            ...keyboard
           }
         );
         
-        ctx.answerCbQuery('✅ Banks list refreshed');
-        console.log(`✅ [SENDMONEY] Banks refreshed for user ${userId}`);
+        ctx.answerCbQuery();
       } catch (error) {
-        console.error('❌ [SENDMONEY] Refresh banks error:', error);
-        ctx.answerCbQuery('❌ Failed to refresh banks');
+        console.error('❌ [SENDMONEY] All banks error:', error);
+        ctx.answerCbQuery('❌ Error loading banks');
       }
     },
     
-    // Bank selection
+    'sendmoney_popular_banks': async (ctx) => {
+      try {
+        const userId = ctx.from.id.toString();
+        const banks = await getBanks();
+        const popularBanks = getPopularBanks(banks);
+        
+        const buttons = [];
+        
+        buttons.push([
+          Markup.button.callback('📱 FINTECH BANKS', 'no_action')
+        ]);
+        
+        const fintechBanks = popularBanks.filter(bank => 
+          ["100002", "100003", "100004", "999991", "100007", "999999"].includes(bank.code)
+        );
+        
+        fintechBanks.forEach(bank => {
+          let emoji = "📱";
+          if (bank.code === "100003") emoji = "🌴";
+          else if (bank.code === "100004") emoji = "💳";
+          else if (bank.code === "999991") emoji = "⚡";
+          else if (bank.code === "100007") emoji = "🏢";
+          else if (bank.code === "999999") emoji = "💎";
+          
+          buttons.push([
+            Markup.button.callback(`${emoji} ${bank.name}`, `sendmoney_bank_${bank.code}`)
+          ]);
+        });
+        
+        buttons.push([
+          Markup.button.callback('🏦 TRADITIONAL BANKS', 'no_action')
+        ]);
+        
+        const traditionalBanks = popularBanks.filter(bank => 
+          !["100002", "100003", "100004", "999991", "100007", "999999"].includes(bank.code)
+        );
+        
+        traditionalBanks.forEach(bank => {
+          buttons.push([
+            Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`)
+          ]);
+        });
+        
+        buttons.push([
+          Markup.button.callback('🔍 Search Bank', 'sendmoney_search_bank'),
+          Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')
+        ]);
+        
+        buttons.push([
+          Markup.button.callback('🔄 Refresh', 'sendmoney_refresh_banks'),
+          Markup.button.callback('❌ Cancel', 'start')
+        ]);
+        
+        await ctx.editMessageText(
+          `🏦 *SELECT BANK*\n\n` +
+          `🔐 *Powered by KoraPay*\n\n` +
+          `⭐ *Popular Banks*\n\n` +
+          `Select from popular banks or view all\\:`,
+          {
+            parse_mode: 'MarkdownV2',
+            ...Markup.inlineKeyboard(buttons)
+          }
+        );
+        
+        ctx.answerCbQuery();
+      } catch (error) {
+        console.error('❌ [SENDMONEY] Popular banks error:', error);
+        ctx.answerCbQuery('❌ Error loading popular banks');
+      }
+    },
+    
+    'sendmoney_search_bank': async (ctx) => {
+      try {
+        const userId = ctx.from.id.toString();
+        
+        const session = sessionManager.getSession(userId);
+        if (session) {
+          session.searchMode = true;
+        }
+        
+        await ctx.editMessageText(
+          `🔍 *SEARCH BANK*\n\n` +
+          `🔐 *Powered by KoraPay*\n\n` +
+          `Type the name of the bank you want to transfer to\\:\n\n` +
+          `*Examples\\:*\n` +
+          `• "opay"\n` +
+          `• "palmpay"\n` +
+          `• "moniepoint"\n` +
+          `• "kuda"\n\n` +
+          `📝 *Enter bank name\\:*`,
+          {
+            parse_mode: 'MarkdownV2',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('⬅️ Back', 'sendmoney_popular_banks')]
+            ])
+          }
+        );
+        
+        ctx.answerCbQuery();
+      } catch (error) {
+        console.error('❌ [SENDMONEY] Search bank error:', error);
+        ctx.answerCbQuery('❌ Error starting search');
+      }
+    },
+    
+    '^sendmoney_banks_page_(\\d+)_?(.*)$': async (ctx) => {
+      try {
+        const userId = ctx.from.id.toString();
+        const page = parseInt(ctx.match[1]);
+        const searchQuery = ctx.match[2] || '';
+        
+        const banks = await getBanks();
+        let filteredBanks = banks;
+        let title = 'All Banks (A-Z)';
+        
+        if (searchQuery) {
+          filteredBanks = searchBanks(banks, searchQuery);
+          title = `Search: "${searchQuery}"`;
+        }
+        
+        if (filteredBanks.length === 0) {
+          await ctx.editMessageText(
+            `🔍 *NO BANKS FOUND*\n\n` +
+            `No banks found for "${searchQuery}"\\.\n\n` +
+            `Try a different search term\\:`,
+            {
+              parse_mode: 'MarkdownV2',
+              ...Markup.inlineKeyboard([
+                [Markup.button.callback('🔍 Search Again', 'sendmoney_search_bank')],
+                [Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')],
+                [Markup.button.callback('⬅️ Cancel', 'start')]
+              ])
+            }
+          );
+        } else {
+          const keyboard = createBankKeyboard(filteredBanks, page, searchQuery);
+          
+          await ctx.editMessageText(
+            `🏦 *SELECT BANK*\n\n` +
+            `🔐 *Powered by KoraPay*\n\n` +
+            `📋 *${title}*\n` +
+            `📊 Showing ${Math.min(filteredBanks.length, (page + 1) * CONFIG.BANKS_PER_PAGE)} of ${filteredBanks.length} banks\n\n` +
+            `Use the buttons below to navigate\\:`,
+            {
+              parse_mode: 'MarkdownV2',
+              ...keyboard
+            }
+          );
+        }
+        
+        ctx.answerCbQuery();
+      } catch (error) {
+        console.error('❌ [SENDMONEY] Pagination error:', error);
+        ctx.answerCbQuery('❌ Error loading page');
+      }
+    },
+    
     '^sendmoney_bank_(.+)$': async (ctx) => {
       try {
         const userId = ctx.from.id.toString();
         const bankCode = ctx.match[1];
         
-        console.log(`🏦 [SENDMONEY] Bank callback - User: ${userId}, Bank Code: ${bankCode}`);
-        
-        // Check if session exists
-        let session = sessionManager.getSession(userId);
-        
-        if (!session || session.action !== 'send_money') {
-          console.log(`💼 [SENDMONEY] Creating new session for user ${userId}`);
-          session = sessionManager.startSession(userId, 'send_money');
-        }
-        
-        // Get bank name
         const banks = await getBanks();
         const selectedBank = banks.find(b => b.code === bankCode);
-        const bankName = selectedBank ? selectedBank.name : 'Unknown Bank';
         
-        console.log(`🏦 [SENDMONEY] Bank selected: ${bankName} (${bankCode})`);
+        if (!selectedBank) {
+          await ctx.answerCbQuery('❌ Bank not found');
+          return;
+        }
+        
+        const bankName = selectedBank.name;
+        
+        let session = sessionManager.getSession(userId);
+        if (!session || session.action !== 'send_money') {
+          session = sessionManager.startSession(userId, 'send_money');
+        }
         
         sessionManager.updateStep(userId, 2, { 
           bankCode: bankCode, 
@@ -686,55 +1008,190 @@ function getCallbacks(bot, users, transactions, CONFIG) {
           `✅ *Bank Selected\\:* ${escapeMarkdown(bankName)}\n\n` +
           `🔢 *Enter recipient account number \\(10 digits\\)\\:*\n\n` +
           `📝 *Example\\:* 1234567890\n\n` +
-          `💡 *Note\\:* Account name will be fetched automatically using Monnify\\.`,
+          `💡 *Note\\:* Account name will be fetched automatically via Kora\\.`,
           {
             parse_mode: 'MarkdownV2',
             ...Markup.inlineKeyboard([
-              [Markup.button.callback('⬅️ Back to Banks', 'sendmoney_refresh_banks')]
+              [Markup.button.callback('⬅️ Change Bank', 'sendmoney_popular_banks')]
             ])
           }
         );
         
         ctx.answerCbQuery();
-        console.log(`✅ [SENDMONEY] Bank selection processed for user ${userId}`);
       } catch (error) {
         console.error('❌ [SENDMONEY] Bank selection error:', error);
         ctx.answerCbQuery('❌ Error occurred');
       }
+    },
+    
+    'sendmoney_refresh_banks': async (ctx) => {
+      try {
+        const userId = ctx.from.id.toString();
+        
+        cachedBanks = [];
+        cacheTimestamp = 0;
+        
+        const banks = await getBanks();
+        const popularBanks = getPopularBanks(banks);
+        
+        const buttons = [];
+        
+        buttons.push([
+          Markup.button.callback('📱 FINTECH BANKS', 'no_action')
+        ]);
+        
+        const fintechBanks = popularBanks.filter(bank => 
+          ["100002", "100003", "100004", "999991", "100007", "999999"].includes(bank.code)
+        );
+        
+        fintechBanks.forEach(bank => {
+          let emoji = "📱";
+          if (bank.code === "100003") emoji = "🌴";
+          else if (bank.code === "100004") emoji = "💳";
+          else if (bank.code === "999991") emoji = "⚡";
+          else if (bank.code === "100007") emoji = "🏢";
+          else if (bank.code === "999999") emoji = "💎";
+          
+          buttons.push([
+            Markup.button.callback(`${emoji} ${bank.name}`, `sendmoney_bank_${bank.code}`)
+          ]);
+        });
+        
+        buttons.push([
+          Markup.button.callback('🏦 TRADITIONAL BANKS', 'no_action')
+        ]);
+        
+        const traditionalBanks = popularBanks.filter(bank => 
+          !["100002", "100003", "100004", "999991", "100007", "999999"].includes(bank.code)
+        );
+        
+        traditionalBanks.forEach(bank => {
+          buttons.push([
+            Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`)
+          ]);
+        });
+        
+        buttons.push([
+          Markup.button.callback('🔍 Search Bank', 'sendmoney_search_bank'),
+          Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')
+        ]);
+        
+        buttons.push([
+          Markup.button.callback('🔄 Refresh', 'sendmoney_refresh_banks'),
+          Markup.button.callback('❌ Cancel', 'start')
+        ]);
+        
+        await ctx.editMessageText(
+          `🏦 *BANKS REFRESHED*\n\n` +
+          `🔐 *Powered by KoraPay*\n\n` +
+          `📊 Total banks available: ${banks.length}\n\n` +
+          `Select from popular banks or search\\:`,
+          {
+            parse_mode: 'MarkdownV2',
+            ...Markup.inlineKeyboard(buttons)
+          }
+        );
+        
+        ctx.answerCbQuery('✅ Banks refreshed');
+      } catch (error) {
+        console.error('❌ [SENDMONEY] Refresh banks error:', error);
+        ctx.answerCbQuery('❌ Failed to refresh banks');
+      }
+    },
+    
+    'no_action': async (ctx) => {
+      ctx.answerCbQuery();
     }
   };
 }
 
-// Handle text messages for send money
+// Handle text messages
 async function handleText(ctx, text, users, transactions) {
   const userId = ctx.from.id.toString();
   const session = sessionManager.getSession(userId);
   
-  console.log(`💬 [SENDMONEY] Text Handler - User: ${userId}, Text: "${text}"`);
-  console.log(`💬 [SENDMONEY] Current sessions:`, Object.keys(sendMoneySessions));
-  console.log(`💬 [SENDMONEY] User session:`, session);
+  if (session && session.searchMode) {
+    session.searchMode = false;
+    
+    const banks = await getBanks();
+    const searchResults = searchBanks(banks, text);
+    
+    if (searchResults.length === 0) {
+      await ctx.reply(
+        `❌ *NO BANKS FOUND*\n\n` +
+        `No banks found for "${text}"\\.\n\n` +
+        `Try a different search term\\:`,
+        {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🔍 Search Again', 'sendmoney_search_bank')],
+            [Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')],
+            [Markup.button.callback('⬅️ Cancel', 'start')]
+          ])
+        }
+      );
+    } else {
+      const buttons = [];
+      
+      buttons.push([
+        Markup.button.callback(`🔍 Results for: "${text.substring(0, 15)}"`, 'no_action')
+      ]);
+      
+      searchResults.slice(0, 10).forEach(bank => {
+        let emoji = "🏦";
+        if (bank.name.includes("OPay") || bank.code === "100002") emoji = "📱";
+        else if (bank.name.includes("PalmPay") || bank.code === "100003") emoji = "🌴";
+        else if (bank.name.includes("Moniepoint") || bank.code === "100004") emoji = "💳";
+        else if (bank.name.includes("Kuda") || bank.code === "999991") emoji = "⚡";
+        else if (bank.name.includes("Rubies") || bank.code === "999999") emoji = "💎";
+        else if (bank.name.includes("VFD") || bank.code === "100007") emoji = "🏢";
+        
+        buttons.push([
+          Markup.button.callback(`${emoji} ${bank.name}`, `sendmoney_bank_${bank.code}`)
+        ]);
+      });
+      
+      if (searchResults.length > 10) {
+        buttons.push([
+          Markup.button.callback('🔍 View More Results', `sendmoney_banks_page_0_${text}`)
+        ]);
+      }
+      
+      buttons.push([
+        Markup.button.callback('🔍 New Search', 'sendmoney_search_bank'),
+        Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')
+      ]);
+      
+      buttons.push([
+        Markup.button.callback('⬅️ Cancel', 'start')
+      ]);
+      
+      await ctx.reply(
+        `🔍 *SEARCH RESULTS*\n\n` +
+        `Found ${searchResults.length} banks matching "${text}"\\.\n\n` +
+        `Select a bank\\:`,
+        {
+          parse_mode: 'MarkdownV2',
+          ...Markup.inlineKeyboard(buttons)
+        }
+      );
+    }
+    
+    return true;
+  }
   
   if (!session || session.action !== 'send_money') {
-    console.log(`💬 [SENDMONEY] No active send_money session for user ${userId}`);
     return false;
   }
   
   const user = users[userId];
-  if (!user) {
-    console.log(`💬 [SENDMONEY] User ${userId} not found in database`);
-    return false;
-  }
-  
-  console.log(`💬 [SENDMONEY] Processing step ${session.step} for user ${userId}`);
+  if (!user) return false;
   
   try {
     if (session.step === 2) {
-      // Account number input
       const accountNumber = text.replace(/\s+/g, '');
-      console.log(`🔢 [SENDMONEY] Account number entered: ${accountNumber}`);
       
       if (!/^\d{10}$/.test(accountNumber)) {
-        console.log(`❌ [SENDMONEY] Invalid account number format: ${accountNumber}`);
         await ctx.reply(
           '❌ *INVALID ACCOUNT NUMBER*\n\n' +
           'Account number must be exactly 10 digits\\.\n\n' +
@@ -744,11 +1201,10 @@ async function handleText(ctx, text, users, transactions) {
         return true;
       }
       
-      console.log(`✅ [SENDMONEY] Valid account number: ${accountNumber}`);
       sessionManager.updateStep(userId, 3, { accountNumber: accountNumber });
       
       const loadingMsg = await ctx.reply(
-        `🔄 *Resolving account details with Monnify\\.\\.\\.*\n\n` +
+        `🔄 *Resolving account details with Kora\\.\\.\\.*\n\n` +
         `🔢 *Account Number\\:* ${accountNumber}\n` +
         `🏦 *Bank\\:* ${escapeMarkdown(session.data.bankName)}\n\n` +
         `⏳ Please wait\\.\\.\\.`,
@@ -756,133 +1212,102 @@ async function handleText(ctx, text, users, transactions) {
       );
       
       try {
-        // Resolve account with Monnify
-        console.log(`🔍 [SENDMONEY] Resolving account ${accountNumber} with bank ${session.data.bankCode}`);
         const resolution = await resolveBankAccount(accountNumber, session.data.bankCode);
         
         if (!resolution.success) {
-          console.log(`❌ [SENDMONEY] Account resolution failed: ${resolution.error}`);
           await ctx.reply(
             `❌ *ACCOUNT RESOLUTION FAILED*\n\n` +
             `🔢 *Account Number\\:* ${accountNumber}\n` +
             `🏦 *Bank\\:* ${escapeMarkdown(session.data.bankName)}\n\n` +
             `📛 *Error\\:* ${escapeMarkdown(resolution.error)}\n\n` +
-            `📛 *Please enter recipient account name manually\\:*\n\n` +
-            `💡 *Example\\:* John Doe`,
+            `📛 *Please enter recipient account name manually\\:*`,
             { parse_mode: 'MarkdownV2' }
           );
           
-          sessionManager.updateStep(userId, 4); // Manual entry step
+          sessionManager.updateStep(userId, 4);
         } else {
-          console.log(`✅ [SENDMONEY] Account resolved successfully:`, resolution);
-          
-          // Handle undefined bank name properly
-          const resolvedBankName = resolution.bankName && resolution.bankName !== 'undefined' && resolution.bankName !== 'null'
-            ? resolution.bankName 
-            : (session.data.bankName || 'Selected Bank');
-          
-          // Also handle account name
-          const resolvedAccountName = resolution.accountName && resolution.accountName !== 'undefined' && resolution.accountName !== 'null'
-            ? resolution.accountName
-            : 'Account Holder Name';
-          
           sessionManager.updateStep(userId, 5, {
-            accountName: resolvedAccountName,
+            accountName: resolution.accountName,
             accountNumber: resolution.accountNumber || accountNumber,
             bankCode: resolution.bankCode || session.data.bankCode,
-            bankName: resolvedBankName
+            bankName: resolution.bankName || session.data.bankName
           });
-          
-          // Show proper message with clear bank name
-          const bankDisplayName = resolvedBankName;
           
           await ctx.reply(
             `✅ *ACCOUNT RESOLVED*\n\n` +
             `🔢 *Account Number\\:* ${accountNumber}\n` +
-            `📛 *Account Name\\:* ${escapeMarkdown(resolvedAccountName)}\n` +
-            `🏦 *Bank\\:* ${escapeMarkdown(bankDisplayName)}\n\n` +
+            `📛 *Account Name\\:* ${escapeMarkdown(resolution.accountName)}\n` +
+            `🏦 *Bank\\:* ${escapeMarkdown(resolution.bankName || session.data.bankName)}\n\n` +
             `💰 *Enter amount to transfer\\:*\n\n` +
-            `💸 *Fee\\:* ${CONFIG.TRANSFER_FEE_PERCENTAGE}%\n` +
-            `💰 *Min\\:* ${formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT)}\n` +
-            `💎 *Max\\:* ${formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT)}`,
+            `💸 *Fee\\:* ₦100 flat\n` +
+            `💰 *Min\\:* ${escapeMarkdown(formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT))}\n` +
+            `💎 *Max\\:* ${escapeMarkdown(formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT))}`,
             { parse_mode: 'MarkdownV2' }
           );
         }
       } catch (error) {
-        console.error('❌ [SENDMONEY] Account resolution error:', error);
         sessionManager.updateStep(userId, 4);
         
         await ctx.reply(
           `⚠️ *ACCOUNT RESOLUTION ERROR*\n\n` +
           `🔢 *Account Number\\:* ${accountNumber}\n` +
           `🏦 *Bank\\:* ${escapeMarkdown(session.data.bankName)}\n\n` +
-          `📛 *Please enter recipient account name manually\\:*\n\n` +
-          `💡 *Example\\:* John Doe`,
+          `📛 *Please enter recipient account name manually\\:*`,
           { parse_mode: 'MarkdownV2' }
         );
       }
       
       try {
         await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id);
-      } catch (e) {
-        console.log('💬 [SENDMONEY] Could not delete loading message:', e.message);
-      }
+      } catch (e) {}
       
       return true;
     }
     
     if (session.step === 4) {
-      // Manual account name entry
       const accountName = text.substring(0, 100);
-      console.log(`📛 [SENDMONEY] Manual account name entered: ${accountName}`);
       
       sessionManager.updateStep(userId, 5, {
         accountName: accountName,
         accountNumber: session.data.accountNumber,
         bankCode: session.data.bankCode,
-        bankName: session.data.bankName || 'Selected Bank'
+        bankName: session.data.bankName
       });
       
       await ctx.reply(
         `✅ *Account Name Saved\\:* ${escapeMarkdown(accountName)}\n\n` +
         `💰 *Enter amount to transfer\\:*\n\n` +
-        `💸 *Fee\\:* ${CONFIG.TRANSFER_FEE_PERCENTAGE}%\n` +
-        `💰 *Min\\:* ${formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT)}\n` +
-        `💎 *Max\\:* ${formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT)}`,
+        `💸 *Fee\\:* ₦100 flat\n` +
+        `💰 *Min\\:* ${escapeMarkdown(formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT))}\n` +
+        `💎 *Max\\:* ${escapeMarkdown(formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT))}`,
         { parse_mode: 'MarkdownV2' }
       );
       return true;
     }
     
     if (session.step === 5) {
-      // Amount entry
       const amount = parseFloat(text);
-      console.log(`💰 [SENDMONEY] Amount entered: ${amount}`);
       
       if (isNaN(amount) || amount < CONFIG.MIN_TRANSFER_AMOUNT || amount > CONFIG.MAX_TRANSFER_AMOUNT) {
-        console.log(`❌ [SENDMONEY] Invalid amount: ${amount}`);
         await ctx.reply(
           `❌ *INVALID AMOUNT*\n\n` +
-          `Amount must be between ${formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT)} and ${formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT)}\\.\n\n` +
+          `Amount must be between ${escapeMarkdown(formatCurrency(CONFIG.MIN_TRANSFER_AMOUNT))} and ${escapeMarkdown(formatCurrency(CONFIG.MAX_TRANSFER_AMOUNT))}\\.\n\n` +
           `📝 Try again\\:`,
           { parse_mode: 'MarkdownV2' }
         );
         return true;
       }
       
-      const fee = (amount * CONFIG.TRANSFER_FEE_PERCENTAGE) / 100;
+      const fee = CONFIG.TRANSFER_FEE;
       const total = amount + fee;
-      
-      console.log(`💰 [SENDMONEY] Calculated fee: ${fee}, Total: ${total}, User wallet: ${user.wallet}`);
       
       if (user.wallet < total) {
         sessionManager.clearSession(userId);
-        console.log(`❌ [SENDMONEY] Insufficient funds: ${user.wallet} < ${total}`);
         await ctx.reply(
           `❌ *INSUFFICIENT BALANCE*\n\n` +
-          `💵 Your Balance\\: ${formatCurrency(user.wallet)}\n` +
-          `💰 Required \\(Amount \\+ Fee\\)\\: ${formatCurrency(total)}\n\n` +
-          `💡 You need ${formatCurrency(total - user.wallet)} more\\.`,
+          `💵 Your Balance\\: ${escapeMarkdown(formatCurrency(user.wallet))}\n` +
+          `💰 Required \\(Amount \\+ Fee\\)\\: ${escapeMarkdown(formatCurrency(total))}\n\n` +
+          `💡 You need ${escapeMarkdown(formatCurrency(total - user.wallet))} more\\.`,
           { parse_mode: 'MarkdownV2' }
         );
         return true;
@@ -894,16 +1319,22 @@ async function handleText(ctx, text, users, transactions) {
         totalAmount: total
       });
       
-      const bankDisplayName = session.data.bankName === 'Selected Bank' ? 'Selected Bank' : session.data.bankName;
+      // Escape ALL text fields thoroughly
+      const escapedAccountName = escapeMarkdown(session.data.accountName);
+      const escapedBankName = escapeMarkdown(session.data.bankName);
+      const escapedAmount = escapeMarkdown(formatCurrency(amount));
+      const escapedFee = escapeMarkdown(formatCurrency(fee));
+      const escapedTotal = escapeMarkdown(formatCurrency(total));
       
       await ctx.reply(
         `📋 *TRANSFER SUMMARY*\n\n` +
-        `📛 *To\\:* ${escapeMarkdown(session.data.accountName)}\n` +
+        `🔐 *Powered by KoraPay*\n\n` +
+        `📛 *To\\:* ${escapedAccountName}\n` +
         `🔢 *Account\\:* ${session.data.accountNumber}\n` +
-        `🏦 *Bank\\:* ${escapeMarkdown(bankDisplayName)}\n` +
-        `💰 *Amount\\:* ${formatCurrency(amount)}\n` +
-        `💸 *Fee\\:* ${formatCurrency(fee)}\n` +
-        `💵 *Total Deducted\\:* ${formatCurrency(total)}\n\n` +
+        `🏦 *Bank\\:* ${escapedBankName}\n` +
+        `💰 *Amount\\:* ${escapedAmount}\n` +
+        `💸 *Fee\\:* ${escapedFee} \\(flat\\)\n` +  // ESCAPED PARENTHESES
+        `💵 *Total Deducted\\:* ${escapedTotal}\n\n` +
         `🔐 *Enter your 4\\-digit PIN to confirm transfer\\:*`,
         { parse_mode: 'MarkdownV2' }
       );
@@ -911,17 +1342,12 @@ async function handleText(ctx, text, users, transactions) {
     }
     
     if (session.step === 6) {
-      // PIN confirmation
-      console.log(`🔐 [SENDMONEY] PIN entered: ${text}, User PIN: ${user.pin}`);
-      
       if (text !== user.pin) {
         user.pinAttempts++;
-        console.log(`❌ [SENDMONEY] Wrong PIN attempt ${user.pinAttempts} for user ${userId}`);
         
         if (user.pinAttempts >= 3) {
           user.pinLocked = true;
           sessionManager.clearSession(userId);
-          console.log(`🔒 [SENDMONEY] Account locked for user ${userId} - too many PIN attempts`);
           
           await ctx.reply(
             '❌ *ACCOUNT LOCKED*\n\n' +
@@ -941,32 +1367,22 @@ async function handleText(ctx, text, users, transactions) {
         return true;
       }
       
-      // PIN correct, process transfer
-      console.log(`✅ [SENDMONEY] PIN verified for user ${userId}`);
       user.pinAttempts = 0;
       
       const { amount, fee, totalAmount } = session.data;
       const { accountNumber, accountName, bankName, bankCode } = session.data;
       
-      console.log(`💸 [SENDMONEY] Processing transfer: ${amount} to ${accountName} (${accountNumber})`);
-      
       const processingMsg = await ctx.reply(
-        `🔄 *PROCESSING BANK TRANSFER VIA MONNIFY\\.\\.\\.*\n\n` +
+        `🔄 *PROCESSING BANK TRANSFER VIA KORAPAY\\.\\.\\.*\n\n` +
         `⏳ Please wait while we process your transfer\\.`,
         { parse_mode: 'MarkdownV2' }
       );
       
       try {
-        // Deduct from wallet
         user.wallet -= totalAmount;
         user.dailyTransfer += totalAmount;
         user.lastTransfer = new Date().toLocaleString();
         
-        const reference = `MTR${Date.now()}_${userId}`;
-        
-        console.log(`📝 [SENDMONEY] Created transaction reference: ${reference}`);
-        
-        // Create transaction record
         const transaction = {
           type: 'bank_transfer',
           amount: amount,
@@ -975,104 +1391,84 @@ async function handleText(ctx, text, users, transactions) {
           recipientName: accountName,
           recipientAccount: accountNumber,
           recipientBank: bankName,
-          reference: reference,
           status: 'pending',
           date: new Date().toLocaleString(),
-          note: 'Transfer via Monnify'
+          note: 'Transfer via KoraPay'
         };
         
-        // Add to transactions
         if (!transactions[userId]) {
           transactions[userId] = [];
         }
-        transactions[userId].push(transaction);
         
-        // Initiate Monnify transfer using v2 API
-        console.log(`🚀 [SENDMONEY] Initiating Monnify transfer...`);
         const transferResult = await initiateTransfer({
           amount: amount,
-          reference: reference,
-          narration: `Transfer to ${accountName}`,
           accountNumber: accountNumber,
           accountName: accountName,
-          bankCode: bankCode
+          bankCode: bankCode,
+          bankName: bankName  // Pass bank name for the API
+        }, {
+          id: userId,
+          name: user.name,
+          username: user.username
         });
         
         if (transferResult.success) {
-          console.log(`✅ [SENDMONEY] Monnify transfer initiated successfully`);
-          
-          // Update transaction status
-          transaction.status = transferResult.requiresOTP ? 'pending_otp' : 'processing';
-          transaction.paymentReference = transferResult.paymentReference;
-          transaction.transactionReference = transferResult.transactionReference;
+          transaction.reference = transferResult.reference;
+          transaction.koraReference = transferResult.koraReference;
+          transaction.status = transferResult.status;
           transaction.completedAt = new Date().toLocaleString();
-          transaction.monnifyResponse = transferResult.message;
+          transaction.message = transferResult.message;
+          transaction.actualFee = transferResult.fee || fee;
           
-          if (transferResult.requiresOTP) {
-            // Store OTP session
-            console.log(`🔐 [SENDMONEY] OTP required for transaction ${reference}`);
-            sessionManager.updateSession(userId, {
-              step: 7, // OTP step
-              transferReference: reference,
-              transactionReference: transferResult.transactionReference
-            });
-            
-            await ctx.reply(
-              `🔐 *OTP REQUIRED*\n\n` +
-              `📋 *Transfer Details\\:*\n` +
-              `📛 To\\: ${escapeMarkdown(accountName)}\n` +
-              `🔢 Account\\: ${accountNumber}\n` +
-              `💰 Amount\\: ${formatCurrency(amount)}\n\n` +
-              `📱 *Check your registered phone number for OTP*\n\n` +
-              `🔢 *Enter the 6\\-digit OTP sent to your phone\\:*`,
-              { parse_mode: 'MarkdownV2' }
-            );
-          } else {
-            transaction.status = 'completed';
-            
-            const bankDisplayName = bankName === 'Selected Bank' ? 'Selected Bank' : bankName;
-            
-            await ctx.reply(
-              `✅ *TRANSFER INITIATED SUCCESSFULLY\\!*\n\n` +
-              `📛 *To\\:* ${escapeMarkdown(accountName)}\n` +
-              `🔢 *Account\\:* ${accountNumber}\n` +
-              `🏦 *Bank\\:* ${escapeMarkdown(bankDisplayName)}\n` +
-              `💰 *Amount\\:* ${formatCurrency(amount)}\n` +
-              `💸 *Fee\\:* ${formatCurrency(fee)}\n` +
-              `💵 *Total Deducted\\:* ${formatCurrency(totalAmount)}\n` +
-              `🔢 *Reference\\:* ${reference}\n` +
-              `📊 *Monnify Ref\\:* ${transferResult.transactionReference}\n` +
-              `💳 *New Balance\\:* ${formatCurrency(user.wallet)}\n\n` +
-              `⚡ *Status\\:* ✅ PROCESSING\n\n` +
-              `💡 *Note\\:* Funds should reflect within 24 hours\\.`,
-              {
-                parse_mode: 'MarkdownV2',
-                ...Markup.inlineKeyboard([
-                  [Markup.button.callback('📋 Save Receipt', `save_${reference}`)],
-                  [Markup.button.callback('🏠 Home', 'start')]
-                ])
-              }
-            );
-            
-            sessionManager.clearSession(userId);
-          }
+          transactions[userId].push(transaction);
+          
+          // Escape ALL text fields thoroughly for success message
+          const escapedBankName = escapeMarkdown(bankName);
+          const escapedAccountName = escapeMarkdown(accountName);
+          const escapedAmount = escapeMarkdown(formatCurrency(amount));
+          const escapedFee = escapeMarkdown(formatCurrency(fee));
+          const escapedTotal = escapeMarkdown(formatCurrency(totalAmount));
+          const escapedNewBalance = escapeMarkdown(formatCurrency(user.wallet));
+          
+          await ctx.reply(
+            `✅ *TRANSFER INITIATED SUCCESSFULLY\\!*\n\n` +
+            `🔐 *Powered by KoraPay*\n\n` +
+            `📛 *To\\:* ${escapedAccountName}\n` +
+            `🔢 *Account\\:* ${accountNumber}\n` +
+            `🏦 *Bank\\:* ${escapedBankName}\n` +
+            `💰 *Amount\\:* ${escapedAmount}\n` +
+            `💸 *Fee\\:* ${escapedFee} \\(flat\\)\n` +  // ESCAPED PARENTHESES
+            `💵 *Total Deducted\\:* ${escapedTotal}\n` +
+            `🔢 *Reference\\:* ${transaction.reference}\n` +
+            `💳 *New Balance\\:* ${escapedNewBalance}\n\n` +
+            `⚡ *Status\\:* ✅ ${transaction.status.toUpperCase()}\n\n` +
+            `💡 *Note\\:* Funds should reflect within minutes to a few hours\\.`,
+            {
+              parse_mode: 'MarkdownV2',
+              ...Markup.inlineKeyboard([
+                [Markup.button.callback('📊 Check Status', `check_status_${transaction.reference}`)],
+                [Markup.button.callback('🏠 Home', 'start')]
+              ])
+            }
+          );
+          
+          sessionManager.clearSession(userId);
         } else {
-          // Transfer failed, refund wallet
-          console.log(`❌ [SENDMONEY] Transfer failed: ${transferResult.error}`);
           user.wallet += totalAmount;
           user.dailyTransfer -= totalAmount;
           
           transaction.status = 'failed';
           transaction.error = transferResult.error;
+          transactions[userId].push(transaction);
           
           await ctx.reply(
             `❌ *TRANSFER FAILED*\n\n` +
-            `💰 *Amount\\:* ${formatCurrency(amount)}\n` +
+            `🔐 *Powered by KoraPay*\n\n` +
+            `💰 *Amount\\:* ${escapeMarkdown(formatCurrency(amount))}\n` +
             `📛 *To\\:* ${escapeMarkdown(accountName)}\n` +
             `🔢 *Account\\:* ${accountNumber}\n\n` +
             `⚠️ *Error\\:* ${escapeMarkdown(transferResult.error)}\n\n` +
-            `💡 *Note\\:* Your wallet has been refunded\\.\n` +
-            `Please try again or contact support\\.`,
+            `💡 *Note\\:* Your wallet has been refunded\\.`,
             { parse_mode: 'MarkdownV2' }
           );
           
@@ -1082,18 +1478,13 @@ async function handleText(ctx, text, users, transactions) {
       } catch (error) {
         console.error('❌ [SENDMONEY] Transfer processing error:', error);
         
-        // Refund on error
         user.wallet += totalAmount;
         user.dailyTransfer -= totalAmount;
         
         await ctx.reply(
           `⚠️ *TRANSFER ERROR*\n\n` +
-          `💰 *Amount\\:* ${formatCurrency(amount)}\n` +
-          `📛 *To\\:* ${escapeMarkdown(accountName)}\n` +
-          `🔢 *Account\\:* ${accountNumber}\n\n` +
           `❌ *Error\\:* ${escapeMarkdown(error.message)}\n\n` +
-          `💡 *Note\\:* Your wallet has been refunded\\.\n` +
-          `Please contact admin for assistance\\.`,
+          `💡 *Note\\:* Your wallet has been refunded\\.`,
           { parse_mode: 'MarkdownV2' }
         );
         
@@ -1102,109 +1493,18 @@ async function handleText(ctx, text, users, transactions) {
       
       try {
         await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
-      } catch (e) {
-        console.log('💬 [SENDMONEY] Could not delete processing message:', e.message);
-      }
+      } catch (e) {}
       
-      return true;
-    }
-    
-    if (session.step === 7) {
-      // OTP entry step
-      const otp = text.replace(/\s+/g, '');
-      console.log(`🔐 [SENDMONEY] OTP entered: ${otp}`);
-      
-      if (!/^\d{6}$/.test(otp)) {
-        console.log(`❌ [SENDMONEY] Invalid OTP format: ${otp}`);
-        await ctx.reply(
-          '❌ *INVALID OTP*\n\n' +
-          'OTP must be exactly 6 digits\\.\n\n' +
-          '📝 Try again\\:',
-          { parse_mode: 'MarkdownV2' }
-        );
-        return true;
-      }
-      
-      const processingMsg = await ctx.reply(
-        `🔄 *VERIFYING OTP WITH MONNIFY\\.\\.\\.*\n\n` +
-        `⏳ Please wait\\.\\.\\.`,
-        { parse_mode: 'MarkdownV2' }
-      );
-      
-      try {
-        console.log(`🔐 [SENDMONEY] Verifying OTP for reference: ${session.data.transferReference}`);
-        const otpResult = await validateTransferOTP(session.data.transferReference, otp);
-        
-        if (otpResult.success) {
-          console.log(`✅ [SENDMONEY] OTP verified successfully`);
-          
-          // Find and update transaction
-          const userTransactions = transactions[userId] || [];
-          const transaction = userTransactions.find(t => t.reference === session.data.transferReference);
-          
-          if (transaction) {
-            transaction.status = 'completed';
-            transaction.otpVerified = true;
-            transaction.completedAt = new Date().toLocaleString();
-          }
-          
-          await ctx.reply(
-            `✅ *OTP VERIFIED SUCCESSFULLY\\!*\n\n` +
-            `🔢 *Reference\\:* ${session.data.transferReference}\n` +
-            `📊 *Monnify Ref\\:* ${session.data.transactionReference}\n` +
-            `⚡ *Status\\:* ✅ COMPLETED\n\n` +
-            `💡 *Note\\:* Transfer is now being processed\\.\n` +
-            `Funds should reflect within 24 hours\\.`,
-            {
-              parse_mode: 'MarkdownV2',
-              ...Markup.inlineKeyboard([
-                [Markup.button.callback('📋 Save Receipt', `save_${session.data.transferReference}`)],
-                [Markup.button.callback('🏠 Home', 'start')]
-              ])
-            }
-          );
-        } else {
-          console.log(`❌ [SENDMONEY] OTP verification failed: ${otpResult.error}`);
-          await ctx.reply(
-            `❌ *OTP VERIFICATION FAILED*\n\n` +
-            `⚠️ *Error\\:* ${escapeMarkdown(otpResult.error)}\n\n` +
-            `📝 *Please try again with correct OTP\\:*`,
-            { parse_mode: 'MarkdownV2' }
-          );
-          
-          // Stay on OTP step for retry
-          return true;
-        }
-        
-      } catch (error) {
-        console.error('❌ [SENDMONEY] OTP verification error:', error);
-        await ctx.reply(
-          `⚠️ *OTP VERIFICATION ERROR*\n\n` +
-          `❌ *Error\\:* ${escapeMarkdown(error.message)}\n\n` +
-          `📞 Please contact admin for assistance\\.`,
-          { parse_mode: 'MarkdownV2' }
-        );
-      }
-      
-      try {
-        await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
-      } catch (e) {
-        console.log('💬 [SENDMONEY] Could not delete processing message:', e.message);
-      }
-      
-      sessionManager.clearSession(userId);
       return true;
     }
     
   } catch (error) {
     console.error('❌ [SENDMONEY] Text handler error:', error);
-    console.error('❌ [SENDMONEY] Error stack:', error.stack);
-    await ctx.reply('❌ An error occurred. Please try again.');
+    await ctx.reply('❌ An error occurred\\. Please try again\\.', { parse_mode: 'MarkdownV2' });
     sessionManager.clearSession(userId);
     return true;
   }
   
-  console.log(`❌ [SENDMONEY] No matching step found for step ${session.step}`);
   return false;
 }
 
@@ -1214,6 +1514,6 @@ module.exports = {
   getCallbacks,
   handleText,
   sessionManager,
-  isMonnifyConfigured: () => isMonnifyConfigured(),
-  debugMonnifyConfig
+  getTransferStatus,
+  testKoraConnection  // Export for admin testing
 };

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "IMEI60044232",
+    "installmentId": "INS59707301HT5",
+    "userId": "7197363326",
+    "deviceId": "DEV59468128",
+    "deviceMake": "Umidigi",
+    "deviceModel": "power 5 Max",
+    "imei": "358249955251310",
+    "imeiStatus": "locked",
+    "phoneDetails": {},
+    "assignedBy": "admin",
+    "assignedAt": "2026-02-03T23:07:24.232Z",
+    "unlockedAt": null,
+    "createdAt": "2026-02-03T23:07:24.232Z",
+    "updatedAt": "2026-02-03T23:07:24.232Z"
+  }
+]

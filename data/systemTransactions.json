@@ -1,0 +1,419 @@
+[
+  {
+    "id": "sys_1771272191938_tcu6w1691",
+    "timestamp": "2026-02-16T20:03:11.938Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "DATA1771412893787_1279640125",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "timestamp": "2026-02-18T11:08:27.240Z",
+    "type": "data",
+    "category": "data",
+    "amount": 695,
+    "status": "completed",
+    "description": "Data purchase for 07052110985 (Glo) - 2.5GB",
+    "phone": "07052110985",
+    "network": "Glo",
+    "reference": "DATA1771412893787_1279640125",
+    "error": null,
+    "metadata": {
+      "api_response": {
+        "status": "successful",
+        "message": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+        "reference": "",
+        "transactionId": "1315_69959d9eaef330.44874519",
+        "ident": "1315_69959d9eaef330.44874519",
+        "id": "",
+        "original": {
+          "Status": "successful",
+          "status": "success",
+          "api_response": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+          "id": "1315_69959d9eaef330.44874519",
+          "ident": "1315_69959d9eaef330.44874519",
+          "plan_amount": "475.00"
+        }
+      },
+      "api_status": "success",
+      "plan_details": {
+        "Network": "Glo",
+        "Plan": "2.5GB",
+        "Validity": "2 Days",
+        "Price": 595,
+        "PlanID": "127",
+        "DisplayPrice": 695
+      },
+      "timestamp": 1771412907238
+    },
+    "user": {
+      "telegramId": "1279640125",
+      "firstName": "mBG",
+      "lastName": "",
+      "username": "opuenekeke",
+      "phone": "07055893260"
+    },
+    "apiResponses": [
+      {
+        "id": "api_1771412907242_u45aso",
+        "transactionId": "DATA1771412893787_1279640125",
+        "apiName": "VTU_DATA_API",
+        "request": {
+          "network": "2",
+          "mobile_number": "07052110985",
+          "Ported_number": "true",
+          "request-id": "DATA1771412893787_1279640125",
+          "plan": "127"
+        },
+        "response": {
+          "status": "successful",
+          "message": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+          "reference": "",
+          "transactionId": "1315_69959d9eaef330.44874519",
+          "ident": "1315_69959d9eaef330.44874519",
+          "id": "",
+          "original": {
+            "Status": "successful",
+            "status": "success",
+            "api_response": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+            "id": "1315_69959d9eaef330.44874519",
+            "ident": "1315_69959d9eaef330.44874519",
+            "plan_amount": "475.00"
+          }
+        },
+        "status": "success",
+        "timestamp": "2026-02-18T11:08:27.243Z"
+      }
+    ]
+  },
+  {
+    "id": "sys_1771415962116_kf3qora4x",
+    "timestamp": "2026-02-18T11:59:22.116Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771416578229_btdiriqh8",
+    "timestamp": "2026-02-18T12:09:38.229Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771416734337_b391zer76",
+    "timestamp": "2026-02-18T12:12:14.337Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771416787644_93tj1yq4j",
+    "timestamp": "2026-02-18T12:13:07.644Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771416827193_nc55zuqbs",
+    "timestamp": "2026-02-18T12:13:47.193Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771416855761_45pgvomgw",
+    "timestamp": "2026-02-18T12:14:15.761Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771417341774_4tsfhnncw",
+    "timestamp": "2026-02-18T12:22:21.774Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771417469874_0tsw3m1r1",
+    "timestamp": "2026-02-18T12:24:29.874Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "sys_1771417705084_jldnyzrcu",
+    "timestamp": "2026-02-18T12:28:25.084Z",
+    "type": "bank_transfer_started",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "status": "started",
+    "apiResponses": []
+  },
+  {
+    "id": "DATA1771431160722_1279640125",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "timestamp": "2026-02-18T16:12:42.314Z",
+    "type": "data",
+    "category": "data",
+    "amount": 695,
+    "status": "failed",
+    "description": "Failed data purchase for 07052110985 (Glo) - 2.5GB",
+    "phone": "07052110985",
+    "network": "Glo",
+    "reference": "DATA1771431160722_1279640125",
+    "error": "Request failed with status code 402",
+    "metadata": {
+      "api_error": {
+        "status": "failed",
+        "message": "Insufficient balance",
+        "reference": "",
+        "transactionId": "",
+        "ident": "",
+        "id": ""
+      },
+      "timestamp": 1771431162313
+    },
+    "user": {
+      "telegramId": "1279640125",
+      "firstName": "mBG",
+      "lastName": "",
+      "username": "opuenekeke",
+      "phone": "07055893260"
+    },
+    "apiResponses": [
+      {
+        "id": "api_1771431162315_8r1gw1",
+        "transactionId": "DATA1771431160722_1279640125",
+        "apiName": "VTU_DATA_API",
+        "request": {
+          "network": "2",
+          "mobile_number": "07052110985",
+          "Ported_number": "true",
+          "request-id": "DATA1771431160722_1279640125",
+          "plan": "127"
+        },
+        "response": {
+          "status": "failed",
+          "message": "Insufficient balance",
+          "reference": "",
+          "transactionId": "",
+          "ident": "",
+          "id": ""
+        },
+        "status": "failed",
+        "timestamp": "2026-02-18T16:12:42.315Z"
+      }
+    ]
+  },
+  {
+    "id": "DATA1771431243665_1279640125",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "timestamp": "2026-02-18T16:14:07.391Z",
+    "type": "data",
+    "category": "data",
+    "amount": 485,
+    "status": "completed",
+    "description": "Data purchase for 07052110985 (Glo) - 1GB",
+    "phone": "07052110985",
+    "network": "Glo",
+    "reference": "DATA1771431243665_1279640125",
+    "error": null,
+    "metadata": {
+      "api_response": {
+        "status": "successful",
+        "message": "Dear Customer, You have successfully gifted 07052110985 with 1.0GB of Data. Thank you. Sponsor Balance: 237358.42GB.",
+        "reference": "",
+        "transactionId": "1315_6995e5483fc639.02776846",
+        "ident": "1315_6995e5483fc639.02776846",
+        "id": "",
+        "original": {
+          "Status": "successful",
+          "status": "success",
+          "api_response": "Dear Customer, You have successfully gifted 07052110985 with 1.0GB of Data. Thank you. Sponsor Balance: 237358.42GB.",
+          "id": "1315_6995e5483fc639.02776846",
+          "ident": "1315_6995e5483fc639.02776846",
+          "plan_amount": "271.00"
+        }
+      },
+      "api_status": "success",
+      "plan_details": {
+        "Network": "Glo",
+        "Plan": "1GB",
+        "Validity": "3 Days",
+        "Price": 385,
+        "PlanID": "21",
+        "DisplayPrice": 485
+      },
+      "timestamp": 1771431247391
+    },
+    "user": {
+      "telegramId": "1279640125",
+      "firstName": "mBG",
+      "lastName": "",
+      "username": "opuenekeke",
+      "phone": "07055893260"
+    },
+    "apiResponses": [
+      {
+        "id": "api_1771431247393_5ikfyn",
+        "transactionId": "DATA1771431243665_1279640125",
+        "apiName": "VTU_DATA_API",
+        "request": {
+          "network": "2",
+          "mobile_number": "07052110985",
+          "Ported_number": "true",
+          "request-id": "DATA1771431243665_1279640125",
+          "plan": "21"
+        },
+        "response": {
+          "status": "successful",
+          "message": "Dear Customer, You have successfully gifted 07052110985 with 1.0GB of Data. Thank you. Sponsor Balance: 237358.42GB.",
+          "reference": "",
+          "transactionId": "1315_6995e5483fc639.02776846",
+          "ident": "1315_6995e5483fc639.02776846",
+          "id": "",
+          "original": {
+            "Status": "successful",
+            "status": "success",
+            "api_response": "Dear Customer, You have successfully gifted 07052110985 with 1.0GB of Data. Thank you. Sponsor Balance: 237358.42GB.",
+            "id": "1315_6995e5483fc639.02776846",
+            "ident": "1315_6995e5483fc639.02776846",
+            "plan_amount": "271.00"
+          }
+        },
+        "status": "success",
+        "timestamp": "2026-02-18T16:14:07.393Z"
+      }
+    ]
+  },
+  {
+    "id": "tx_1771437006213_gazanjo1f",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "timestamp": "2026-02-18T17:50:06.213Z",
+    "type": "admin_credit",
+    "category": "admin_credit",
+    "amount": 2000,
+    "status": "completed",
+    "description": "Manual credit by admin",
+    "reference": "tx_1771437006213_gazanjo1f",
+    "metadata": {
+      "creditedBy": "1279640125",
+      "adminUsername": "opuenekeke",
+      "adminName": "mBG"
+    },
+    "user": {
+      "telegramId": "1279640125",
+      "firstName": "mBG",
+      "lastName": "",
+      "username": "opuenekeke",
+      "phone": "07055893260"
+    }
+  },
+  {
+    "id": "DATA1771437090899_1279640125",
+    "userId": "1279640125",
+    "telegramId": "1279640125",
+    "timestamp": "2026-02-18T17:51:39.744Z",
+    "type": "data",
+    "category": "data",
+    "amount": 695,
+    "status": "completed",
+    "description": "Data purchase for 07052110985 (Glo) - 2.5GB",
+    "phone": "07052110985",
+    "network": "Glo",
+    "reference": "DATA1771437090899_1279640125",
+    "error": null,
+    "metadata": {
+      "api_response": {
+        "status": "successful",
+        "message": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+        "reference": "",
+        "transactionId": "1315_6995fc1f7ac801.79090029",
+        "ident": "1315_6995fc1f7ac801.79090029",
+        "id": "",
+        "original": {
+          "Status": "successful",
+          "status": "success",
+          "api_response": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+          "id": "1315_6995fc1f7ac801.79090029",
+          "ident": "1315_6995fc1f7ac801.79090029",
+          "plan_amount": "475.00"
+        }
+      },
+      "api_status": "success",
+      "plan_details": {
+        "Network": "Glo",
+        "Plan": "2.5GB",
+        "Validity": "2 Days",
+        "Price": 595,
+        "PlanID": "127",
+        "DisplayPrice": 695
+      },
+      "timestamp": 1771437099744
+    },
+    "user": {
+      "telegramId": "1279640125",
+      "firstName": "mBG",
+      "lastName": "",
+      "username": "opuenekeke",
+      "phone": "07055893260"
+    },
+    "apiResponses": [
+      {
+        "id": "api_1771437099745_uryuuv",
+        "transactionId": "DATA1771437090899_1279640125",
+        "apiName": "VTU_DATA_API",
+        "request": {
+          "network": "2",
+          "mobile_number": "07052110985",
+          "Ported_number": "true",
+          "request-id": "DATA1771437090899_1279640125",
+          "plan": "127"
+        },
+        "response": {
+          "status": "successful",
+          "message": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+          "reference": "",
+          "transactionId": "1315_6995fc1f7ac801.79090029",
+          "ident": "1315_6995fc1f7ac801.79090029",
+          "id": "",
+          "original": {
+            "Status": "successful",
+            "status": "success",
+            "api_response": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+            "id": "1315_6995fc1f7ac801.79090029",
+            "ident": "1315_6995fc1f7ac801.79090029",
+            "plan_amount": "475.00"
+          }
+        },
+        "status": "success",
+        "timestamp": "2026-02-18T17:51:39.745Z"
+      }
+    ]
+  }
+]

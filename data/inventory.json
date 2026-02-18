@@ -1,0 +1,14 @@
+[
+  {
+    "deviceId": "DEV37514755",
+    "quantity": 5,
+    "createdAt": "2026-02-03T22:13:50.437Z",
+    "updatedAt": "2026-02-03T22:13:50.467Z"
+  },
+  {
+    "deviceId": "DEV59468128",
+    "quantity": 5,
+    "createdAt": "2026-02-03T22:57:48.147Z",
+    "updatedAt": "2026-02-09T16:46:40.971Z"
+  }
+]

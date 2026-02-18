@@ -1,0 +1,167 @@
+[
+  {
+    "id": "TEC-CAMON19-001",
+    "make": "Tecno",
+    "model": "Camon 19",
+    "costPrice": 80000,
+    "sellingPrice": 104000,
+    "quantity": 10,
+    "status": "available",
+    "addedBy": "system",
+    "createdAt": "2026-01-28T17:11:35.791Z",
+    "variants": [
+      {
+        "id": "TEC-CAMON19-001-DEFAULT",
+        "ram": "4GB",
+        "storage": "64GB",
+        "color": "Black",
+        "cashPrice": 50000,
+        "creditPrice": 65000,
+        "costPrice": 80000,
+        "specs": {
+          "display": "6.0\" LCD",
+          "camera": "13MP",
+          "battery": "4000mAh",
+          "processor": "Octa-core",
+          "os": "Android",
+          "warranty": "12 months"
+        }
+      }
+    ]
+  },
+  {
+    "id": "IPH-13-001",
+    "make": "iPhone",
+    "model": "13",
+    "costPrice": 300000,
+    "sellingPrice": 390000,
+    "quantity": 5,
+    "status": "available",
+    "addedBy": "system",
+    "createdAt": "2026-01-28T17:11:35.792Z",
+    "variants": [
+      {
+        "id": "IPH-13-001-DEFAULT",
+        "ram": "4GB",
+        "storage": "64GB",
+        "color": "Black",
+        "cashPrice": 50000,
+        "creditPrice": 65000,
+        "costPrice": 300000,
+        "specs": {
+          "display": "6.0\" LCD",
+          "camera": "13MP",
+          "battery": "4000mAh",
+          "processor": "Octa-core",
+          "os": "Android",
+          "warranty": "12 months"
+        }
+      }
+    ]
+  },
+  {
+    "id": "SAM-S22-001",
+    "make": "Samsung",
+    "model": "S22",
+    "costPrice": 250000,
+    "sellingPrice": 325000,
+    "quantity": 8,
+    "status": "available",
+    "addedBy": "system",
+    "createdAt": "2026-01-28T17:11:35.792Z",
+    "variants": [
+      {
+        "id": "SAM-S22-001-DEFAULT",
+        "ram": "4GB",
+        "storage": "64GB",
+        "color": "Black",
+        "cashPrice": 50000,
+        "creditPrice": 65000,
+        "costPrice": 250000,
+        "specs": {
+          "display": "6.0\" LCD",
+          "camera": "13MP",
+          "battery": "4000mAh",
+          "processor": "Octa-core",
+          "os": "Android",
+          "warranty": "12 months"
+        }
+      }
+    ]
+  },
+  {
+    "id": "samsung_s10plus_549945",
+    "make": "Samsung",
+    "model": "S10plus",
+    "category": "flagship",
+    "costPrice": 280000,
+    "sellingPrice": 330000,
+    "specs": {
+      "display": "6.3\" super Amoled",
+      "camera": "12MP",
+      "battery": "4100mAh"
+    },
+    "status": "active",
+    "addedAt": "2026-01-29T19:39:09.945Z",
+    "addedBy": "1279640125"
+  },
+  {
+    "id": "DEV17700291800010I3",
+    "make": "make",
+    "model": "samsung model",
+    "costPrice": 10,
+    "sellingPrice": 300000,
+    "specs": {},
+    "createdAt": "2026-02-02T10:46:20.001Z",
+    "isActive": true
+  },
+  {
+    "id": "DEV1770063302857AC8",
+    "make": "iPhone",
+    "model": "15 Pro Max",
+    "costPrice": 900000,
+    "sellingPrice": 1050000,
+    "specs": {},
+    "createdAt": "2026-02-02T20:15:02.857Z",
+    "isActive": true
+  },
+  {
+    "id": "DEV17701118901950C9",
+    "make": "Tecno",
+    "model": "Pop 5",
+    "costPrice": 60000,
+    "sellingPrice": 75000,
+    "specs": {
+      "rom": "64GB",
+      "ram": "2GB"
+    },
+    "createdAt": "2026-02-03T09:44:50.195Z",
+    "isActive": true
+  },
+  {
+    "id": "DEV1770112203274AXD",
+    "make": "Tecno",
+    "model": "Pop 5",
+    "costPrice": 60000,
+    "sellingPrice": 75000,
+    "specs": {
+      "rom": "64GB",
+      "ram": "4GB"
+    },
+    "createdAt": "2026-02-03T09:50:03.274Z",
+    "isActive": true
+  },
+  {
+    "id": "DEV1770113523595TLQ",
+    "make": "Tecno",
+    "model": "Pop 5",
+    "costPrice": 60000,
+    "sellingPrice": 75000,
+    "specs": {
+      "rom": "64GB",
+      "ram": "4GB"
+    },
+    "createdAt": "2026-02-03T10:12:03.595Z",
+    "isActive": true
+  }
+]

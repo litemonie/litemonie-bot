@@ -1,0 +1,35 @@
+[
+  {
+    "id": "DATA1770850015398_1279640125",
+    "type": "data",
+    "amount": 695,
+    "network": "Glo",
+    "plan": "2.5GB",
+    "validity": "2 Days",
+    "phone": "07052110985",
+    "reference": "DATA1770850015398_1279640125",
+    "api_reference": "1315_698d06def2eae5.69534700",
+    "date": "2/11/2026, 11:47:06 PM",
+    "status": "completed",
+    "message": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+    "api_response": {
+      "status": "successful",
+      "message": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+      "reference": "",
+      "transactionId": "1315_698d06def2eae5.69534700",
+      "ident": "1315_698d06def2eae5.69534700",
+      "id": "",
+      "original": {
+        "Status": "successful",
+        "status": "success",
+        "api_response": "You have successfully gifted 2.5GB to 07052110985. . Sender number: 08153705025",
+        "id": "1315_698d06def2eae5.69534700",
+        "ident": "1315_698d06def2eae5.69534700",
+        "plan_amount": "475.00"
+      }
+    },
+    "timestamp": 1770850026238,
+    "user_id": "1279640125",
+    "api_status": "success"
+  }
+]

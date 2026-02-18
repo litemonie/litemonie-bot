@@ -1,0 +1,94 @@
+[
+  {
+    "id": "TEC-CAMON19-001",
+    "make": "Tecno",
+    "model": "Camon 19",
+    "category": "mid-range",
+    "variants": [
+      {
+        "id": "TEC-CAMON19-001-6GB",
+        "ram": "6GB",
+        "storage": "128GB",
+        "color": "Black",
+        "cashPrice": 120000,
+        "creditPrice": 156000,
+        "costPrice": 100000,
+        "specs": {
+          "display": "6.8\" AMOLED",
+          "camera": "64MP + 8MP + 2MP",
+          "battery": "5000mAh",
+          "processor": "Helio G96",
+          "os": "Android 12",
+          "warranty": "12 months"
+        }
+      },
+      {
+        "id": "TEC-CAMON19-001-8GB",
+        "ram": "8GB",
+        "storage": "256GB",
+        "color": "Blue",
+        "cashPrice": 140000,
+        "creditPrice": 182000,
+        "costPrice": 115000,
+        "specs": {
+          "display": "6.8\" AMOLED",
+          "camera": "64MP + 8MP + 2MP",
+          "battery": "5000mAh",
+          "processor": "Helio G96",
+          "os": "Android 12",
+          "warranty": "12 months"
+        }
+      }
+    ]
+  },
+  {
+    "id": "INF-HOT12-002",
+    "make": "Infinix",
+    "model": "Hot 12",
+    "category": "budget",
+    "variants": [
+      {
+        "id": "INF-HOT12-002-4GB",
+        "ram": "4GB",
+        "storage": "64GB",
+        "color": "Green",
+        "cashPrice": 75000,
+        "creditPrice": 97500,
+        "costPrice": 62000,
+        "specs": {
+          "display": "6.78\" IPS",
+          "camera": "50MP + 2MP",
+          "battery": "5000mAh",
+          "processor": "Helio G85",
+          "os": "Android 11",
+          "warranty": "12 months"
+        }
+      }
+    ]
+  },
+  {
+    "id": "SAM-A14-003",
+    "make": "Samsung",
+    "model": "Galaxy A14",
+    "category": "mid-range",
+    "variants": [
+      {
+        "id": "SAM-A14-003-4GB",
+        "ram": "4GB",
+        "storage": "128GB",
+        "color": "Black",
+        "cashPrice": 95000,
+        "creditPrice": 123500,
+        "costPrice": 78000,
+        "specs": {
+          "display": "6.6\" PLS LCD",
+          "camera": "50MP + 5MP + 2MP",
+          "battery": "5000mAh",
+          "processor": "Exynos 850",
+          "os": "Android 13",
+          "warranty": "12 months"
+        }
+      }
+    ]
+  }
+]

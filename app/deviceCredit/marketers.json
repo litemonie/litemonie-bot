@@ -1,0 +1,21 @@
+[
+  {
+    "id": "MARK-ADMIN-001",
+    "userId": "admin",
+    "name": "System Admin",
+    "phone": "+2348000000000",
+    "email": "admin@litedevice.com",
+    "commissionRate": 5,
+    "status": "active",
+    "assignedDevices": [],
+    "assignedClients": [],
+    "totalSales": 0,
+    "totalCommission": 0,
+    "joinDate": "2024-01-01T00:00:00.000Z",
+    "performance": {
+      "monthlyTarget": 10000000,
+      "currentMonthSales": 0,
+      "conversionRate": 0
+    }
+  }
+]

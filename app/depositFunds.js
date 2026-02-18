@@ -1,9 +1,35 @@
 /**
- * depositFunds.js - FIXED VERSION with Callback Registration
+ * depositFunds.js - FIXED VERSION with Proper Imports & Transaction Tracking
  */
 
 const axios = require('axios');
 const crypto = require('crypto');
+
+// ========== IMPORT SYSTEM MANAGERS FROM CORRECT LOCATION ==========
+let systemTransactionManager = null;
+let apiResponseManager = null;
+
+// Function to get system transaction manager (prevents circular dependency)
+function getTransactionManagers() {
+  if (!systemTransactionManager || !apiResponseManager) {
+    try {
+      const transactionSystem = require('../transaction-system');
+      systemTransactionManager = transactionSystem.systemTransactionManager;
+      apiResponseManager = transactionSystem.apiResponseManager;
+      console.log('✅ Loaded transaction managers for depositFunds module');
+    } catch (error) {
+      console.error('❌ Could not load transaction managers:', error.message);
+    }
+  }
+  return { systemTransactionManager, apiResponseManager };
+}
+
+// ========== IMPORT DATABASE FUNCTIONS ==========
+const { 
+  getUsers, 
+  getTransactions,
+  recordTransaction  // Use the unified recording function
+} = require('../database');
 
 /* =====================================================
    ENV VARIABLES & CONFIG
@@ -607,6 +633,29 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         ...newAccount
       });
       
+      // ===== RECORD VIRTUAL ACCOUNT CREATION TRANSACTION =====
+      try {
+        const { recordTransaction } = require('../database');
+        if (typeof recordTransaction === 'function') {
+          await recordTransaction(telegramId, {
+            type: 'virtual_account_created',
+            amount: 0,
+            status: 'completed',
+            description: `Virtual account created with ${newAccount.bank_name} - ${newAccount.account_number}`,
+            category: 'account',
+            metadata: {
+              bank_name: newAccount.bank_name,
+              account_number: newAccount.account_number,
+              account_name: newAccount.account_name,
+              provider: newAccount.provider || 'billstack'
+            }
+          });
+          console.log(`✅ Virtual account creation recorded for user ${telegramId}`);
+        }
+      } catch (dbError) {
+        console.warn('⚠️ Could not record virtual account creation:', dbError.message);
+      }
+      
       let message = `✅ *Virtual Account Created!*\n\n`;
       
       if (newAccount.provider === 'test') {
@@ -754,6 +803,29 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
       ...newAccount
     });
     
+    // ===== RECORD NEW VIRTUAL ACCOUNT CREATION =====
+    try {
+      const { recordTransaction } = require('../database');
+      if (typeof recordTransaction === 'function') {
+        await recordTransaction(telegramId, {
+          type: 'virtual_account_recreated',
+          amount: 0,
+          status: 'completed',
+          description: `New virtual account created (replaced old one) with ${newAccount.bank_name} - ${newAccount.account_number}`,
+          category: 'account',
+          metadata: {
+            bank_name: newAccount.bank_name,
+            account_number: newAccount.account_number,
+            account_name: newAccount.account_name,
+            provider: newAccount.provider || 'billstack',
+            old_account: oldAccount?.account_number
+          }
+        });
+      }
+    } catch (dbError) {
+      console.warn('⚠️ Could not record account recreation:', dbError.message);
+    }
+    
     let message = `🆕 *New Virtual Account Created!*\n\n`;
     message += `(Old account deactivated)\n\n`;
     message += `🏦 *Bank:* ${newAccount.bank_name}\n`;
@@ -886,7 +958,107 @@ async function handleContactAdminDirect(ctx) {
 }
 
 /* =====================================================
-   5️⃣ SETUP FUNCTION
+   5️⃣ WEBHOOK HANDLER WITH TRANSACTION TRACKING
+===================================================== */
+function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
+  return async (req, res) => {
+    console.log('📥 Webhook received');
+    
+    try {
+      const payload = req.body;
+      console.log('Webhook payload:', JSON.stringify(payload, null, 2));
+      
+      // Verify webhook signature if secret is set
+      if (CONFIG.BILLSTACK_WEBHOOK_SECRET) {
+        const signature = req.headers['x-billstack-signature'];
+        // Add signature verification here if needed
+      }
+      
+      // Check if this is a deposit notification
+      if (payload.event === 'deposit.successful' || payload.type === 'deposit') {
+        const { 
+          account_number, 
+          amount, 
+          reference,
+          transaction_reference,
+          status,
+          metadata
+        } = payload.data || payload;
+        
+        console.log(`💰 Deposit received: ₦${amount} to account ${account_number}`);
+        
+        // Find user by virtual account number
+        const virtualAccount = await virtualAccounts.findByAccountNumber(account_number);
+        
+        if (virtualAccount) {
+          const userId = virtualAccount.user_id;
+          const user = await users.findById(userId);
+          
+          if (user) {
+            // Credit user's wallet
+            const oldBalance = user.wallet || 0;
+            user.wallet = oldBalance + parseFloat(amount);
+            await users.update(userId, { wallet: user.wallet });
+            
+            console.log(`✅ Credited ₦${amount} to user ${userId}. New balance: ₦${user.wallet}`);
+            
+            // ===== RECORD DEPOSIT TRANSACTION =====
+            const depositRef = transaction_reference || reference || `DEP${Date.now()}`;
+            
+            try {
+              const { recordTransaction } = require('../database');
+              if (typeof recordTransaction === 'function') {
+                await recordTransaction(userId, {
+                  id: depositRef,
+                  type: 'deposit',
+                  amount: parseFloat(amount),
+                  status: 'completed',
+                  description: `Wallet deposit via virtual account`,
+                  category: 'deposit',
+                  reference: depositRef,
+                  metadata: {
+                    account_number,
+                    bank_name: virtualAccount.bank_name,
+                    webhook_payload: payload
+                  }
+                });
+                console.log(`✅ Deposit transaction recorded: ${depositRef}`);
+              }
+            } catch (dbError) {
+              console.warn('⚠️ Could not record deposit:', dbError.message);
+            }
+            
+            // Notify user
+            try {
+              await bot.telegram.sendMessage(
+                userId,
+                `💰 *Deposit Received!*\n\n` +
+                `Amount: ₦${amount.toLocaleString()}\n` +
+                `New Balance: ₦${user.wallet.toLocaleString()}\n` +
+                `Reference: \`${depositRef}\`\n\n` +
+                `Thank you for using our service!`,
+                { parse_mode: 'Markdown' }
+              );
+            } catch (notifyError) {
+              console.error('Failed to notify user:', notifyError.message);
+            }
+          }
+        } else {
+          console.log(`⚠️ No user found for account number: ${account_number}`);
+        }
+      }
+      
+      res.status(200).json({ status: 'ok' });
+      
+    } catch (error) {
+      console.error('❌ Webhook error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  };
+}
+
+/* =====================================================
+   6️⃣ SETUP FUNCTION
 ===================================================== */
 function setupDepositHandlers(bot, users, virtualAccounts) {
   console.log('\n📋 SETTING UP DEPOSIT CALLBACK HANDLERS...');
@@ -931,7 +1103,7 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
 }
 
 /* =====================================================
-   6️⃣ EXPORTS
+   7️⃣ EXPORTS
 ===================================================== */
 module.exports = {
   // Main handlers
@@ -955,11 +1127,8 @@ module.exports = {
   // Setup function
   setupDepositHandlers,
   
-  // Simple webhook handler
-  handleBillstackWebhook: () => async (req, res) => {
-    console.log('📥 Webhook received');
-    res.status(200).json({ status: 'ok' });
-  },
+  // Webhook handler with transaction tracking
+  handleBillstackWebhook,
   
   // Utility functions
   generateReference,

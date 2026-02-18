@@ -1,0 +1,39 @@
+[
+  {
+    "id": "MARK-ADMIN-001",
+    "userId": "admin",
+    "name": "System Admin",
+    "phone": "+2348000000000",
+    "email": "admin@litedevice.com",
+    "commissionRate": 5,
+    "status": "active",
+    "assignedDevices": [],
+    "assignedClients": [],
+    "totalSales": 0,
+    "totalCommission": 0,
+    "joinDate": "2026-01-29T12:45:01.708Z",
+    "performance": {
+      "monthlyTarget": 10000000,
+      "currentMonthSales": 0,
+      "conversionRate": 0
+    }
+  },
+  {
+    "id": "MARK-71973-399",
+    "telegramId": "7197363326",
+    "name": "Mr Michael🌕🐐",
+    "phone": "09018559295",
+    "email": "litewaydata@gmail.com",
+    "commissionRate": 10,
+    "status": "active",
+    "assignedClients": [],
+    "totalSales": 0,
+    "totalCommission": 0,
+    "joinDate": "2026-01-29T18:37:31.399Z",
+    "performance": {
+      "monthlyTarget": 5000000,
+      "currentMonthSales": 0,
+      "conversionRate": 0
+    }
+  }
+]

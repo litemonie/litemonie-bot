@@ -1,0 +1,46 @@
+[
+  {
+    "id": "iphone13_001",
+    "make": "iPhone",
+    "model": "13",
+    "costPrice": 300000,
+    "sellingPrice": 390000,
+    "quantity": 5,
+    "status": "available",
+    "addedBy": "system",
+    "addedAt": "2026-01-27T12:37:09.305Z"
+  },
+  {
+    "id": "samsung_s22_001",
+    "make": "Samsung",
+    "model": "S22",
+    "costPrice": 250000,
+    "sellingPrice": 325000,
+    "quantity": 2,
+    "status": "available",
+    "addedBy": "system",
+    "addedAt": "2026-01-27T12:37:09.351Z"
+  },
+  {
+    "id": "tecno_camon_001",
+    "make": "Tecno",
+    "model": "Camon 19",
+    "costPrice": 80000,
+    "sellingPrice": 104000,
+    "quantity": 7,
+    "status": "available",
+    "addedBy": "system",
+    "addedAt": "2026-01-27T12:37:09.351Z"
+  },
+  {
+    "id": "infinix_note_20pro_1769545142354_0",
+    "make": "Infinix",
+    "model": "Note 20pro",
+    "costPrice": 150000,
+    "sellingPrice": 195000,
+    "quantity": 1,
+    "status": "available",
+    "addedBy": "1279640125",
+    "addedAt": "2026-01-27T20:19:02.354Z"
+  }
+]

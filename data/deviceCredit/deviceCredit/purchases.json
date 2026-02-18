@@ -1,0 +1,136 @@
+[
+  {
+    "purchaseId": "DEV1769883201569R64JH",
+    "userId": "1279640125",
+    "deviceId": "DEV1769883162283W34",
+    "make": "Tecno",
+    "model": "Camon 20",
+    "totalPrice": 189000,
+    "amountPaid": 189000,
+    "downPayment": 18000,
+    "planType": "daily",
+    "interestRate": 5,
+    "paymentCount": 60,
+    "regularPayment": 2850,
+    "imei": "516479539721999",
+    "serial": "UDYGTEI6B6",
+    "status": "completed",
+    "completed": true,
+    "createdAt": "2026-01-31T18:13:21.570Z",
+    "payments": [
+      {
+        "amount": 18000,
+        "date": "2026-01-31T18:13:21.570Z",
+        "type": "down_payment",
+        "userId": "1279640125"
+      },
+      {
+        "amount": 17100,
+        "date": "2026-01-31T18:38:43.864Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 150723
+      },
+      {
+        "amount": 15390,
+        "date": "2026-01-31T20:15:52.120Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 135333
+      },
+      {
+        "amount": 13851,
+        "date": "2026-01-31T20:23:39.831Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 121482
+      },
+      {
+        "amount": 12465,
+        "date": "2026-01-31T20:24:13.956Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 109017
+      },
+      {
+        "amount": 12465,
+        "date": "2026-01-31T20:24:14.263Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 96552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:25:21.465Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 86552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:25:45.045Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 76552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:26:03.018Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 66552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:26:19.905Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 56552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:26:35.424Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 46552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:27:38.187Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 36552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:27:54.689Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 26552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:28:11.075Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 16552
+      },
+      {
+        "amount": 10000,
+        "date": "2026-01-31T20:28:26.187Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 6552
+      },
+      {
+        "amount": 9729,
+        "date": "2026-01-31T20:30:02.914Z",
+        "type": "wallet_deduction",
+        "userId": "1279640125",
+        "balanceAfter": 196823
+      }
+    ],
+    "lastPaymentDate": "2026-01-31T20:30:02.914Z",
+    "completionDate": "2026-01-31T20:30:02.914Z"
+  }
+]
