@@ -1,6 +1,6 @@
 // ==================== BOT-CORE.JS ====================
 // Bot initialization, server setup, launch
-// PRODUCTION READY - WITH RENDER/WEBHOOK SUPPORT
+// PRODUCTION READY - WITH RENDER/WEBHOOK SUPPORT & DEBUG ENDPOINTS
 // =====================================================
 
 const { Telegraf } = require('telegraf');
@@ -136,6 +136,24 @@ function setupExpressServer(bot) {
     next();
   });
 
+  // ========== DEBUG ENDPOINTS ==========
+  // Simple ping endpoint
+  app.get('/ping', (req, res) => {
+    console.log('📡 Ping received!');
+    res.send('pong');
+  });
+
+  // Test webhook endpoint
+  app.post('/test-webhook', (req, res) => {
+    console.log('🧪 Test webhook received!');
+    console.log('Body:', JSON.stringify(req.body));
+    res.status(200).json({ 
+      received: true, 
+      timestamp: new Date().toISOString(),
+      body: req.body 
+    });
+  });
+
   // ========== HEALTH CHECK ENDPOINTS FOR RENDER ==========
   app.get('/health', (req, res) => {
     res.status(200).json({ 
@@ -153,9 +171,11 @@ function setupExpressServer(bot) {
       message: '🚀 Litemonie Bot is running!',
       docs: {
         health: '/health',
+        ping: '/ping',
         api: '/api/device-data',
         botInfo: '/bot-info',
-        webhook: '/webhook'
+        webhook: '/webhook',
+        testWebhook: '/test-webhook'
       },
       environment: process.env.NODE_ENV || 'development',
       timestamp: new Date().toISOString()
@@ -177,12 +197,27 @@ function setupExpressServer(bot) {
 
   // ========== WEBHOOK ENDPOINT FOR TELEGRAM ==========
   app.post('/webhook', (req, res) => {
+    console.log('📩 WEBHOOK RECEIVED AT:', new Date().toISOString());
+    console.log('📦 Update ID:', req.body?.update_id);
+    console.log('💬 Message:', req.body?.message?.text);
+    console.log('👤 From:', req.body?.message?.from?.id, req.body?.message?.from?.first_name);
+    
     try {
       // Process update with Telegraf
-      bot.handleUpdate(req.body, res);
+      bot.handleUpdate(req.body, (err, result) => {
+        if (err) {
+          console.error('❌ Bot handleUpdate error:', err);
+          // Always return 200 to Telegram
+          res.status(200).send('OK');
+        } else {
+          console.log('✅ Update handled successfully');
+          res.status(200).send('OK');
+        }
+      });
     } catch (error) {
       console.error('❌ Webhook error:', error);
-      res.status(500).send('Error');
+      // CRITICAL: Always return 200 to Telegram so it doesn't keep retrying
+      res.status(200).send('OK');
     }
   });
 
@@ -264,6 +299,8 @@ function setupExpressServer(bot) {
   console.log(`   POST /api/request-unlock - Request device unlock`);
   console.log(`   GET  /api/health - Health check`);
   console.log(`   POST /webhook - Telegram webhook`);
+  console.log(`   GET  /ping - Debug ping`);
+  console.log(`   POST /test-webhook - Test webhook endpoint`);
 
   return app;
 }
