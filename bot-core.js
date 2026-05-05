@@ -221,7 +221,7 @@ function setupExpressServer(bot) {
     }
   });
 
-  // ========== DEPOSIT WEBHOOK ==========
+   // ========== DEPOSIT WEBHOOK ==========
   try {
     const usersForDeposit = { ...require('./database').getUsers(), ...userMethods };
     depositFunds.setupDepositHandlers(bot, usersForDeposit, virtualAccounts);
@@ -230,12 +230,60 @@ function setupExpressServer(bot) {
     console.error('❌ Deposit handlers failed:', error);
   }
   
-  app.post('/billstack-webhook', depositFunds.handleBillstackWebhook(
-    bot, 
-    require('./database').getUsers(), 
-    require('./database').getTransactions(), 
-    virtualAccounts
-  ));
+  // ========== BILLSTACK WEBHOOK ENDPOINT ==========
+  app.post('/billstack-webhook', async (req, res) => {
+    console.log('💰 Billstack webhook received:', new Date().toISOString());
+    console.log('📦 Body:', JSON.stringify(req.body));
+    
+    try {
+      const { transactionReference, amount, customerReference, status } = req.body;
+      
+      if (status === 'success' && customerReference) {
+        const users = require('./database').getUsers();
+        const { setUsers, saveAllData, recordTransaction } = require('./database');
+        
+        if (users[customerReference]) {
+          const previousBalance = users[customerReference].wallet || 0;
+          users[customerReference].wallet = previousBalance + parseFloat(amount);
+          setUsers(users);
+          await saveAllData();
+          
+          await recordTransaction(customerReference, {
+            type: 'deposit',
+            amount: parseFloat(amount),
+            status: 'completed',
+            description: 'Billstack deposit',
+            reference: transactionReference,
+            previousBalance: previousBalance,
+            newBalance: users[customerReference].wallet
+          });
+          
+          console.log(`✅ Credited ₦${amount} to user ${customerReference}`);
+          
+          // Notify user on Telegram
+          try {
+            await bot.telegram.sendMessage(
+              customerReference,
+              `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+              `Amount: ₦${parseFloat(amount).toLocaleString()}\n` +
+              `Reference: ${transactionReference}\n\n` +
+              `New Balance: ₦${users[customerReference].wallet.toLocaleString()}`,
+              { parse_mode: 'Markdown' }
+            );
+          } catch (notifyError) {
+            console.log('Could not notify user:', customerReference);
+          }
+        } else {
+          console.log(`⚠️ User ${customerReference} not found`);
+        }
+      }
+      
+      res.status(200).json({ status: 'success' });
+    } catch (error) {
+      console.error('❌ Billstack error:', error);
+      res.status(200).json({ status: 'received' });
+    }
+  });
   
   // ========== MINI APP API ENDPOINTS ==========
   app.get('/api/device-data', async (req, res) => {
