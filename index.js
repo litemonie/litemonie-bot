@@ -36,7 +36,9 @@ app.get('/', (req, res) => {
     message: '🚀 Litemonie Bot is running!',
     docs: {
       health: '/health',
-      botInfo: '/bot-info'
+      botInfo: '/bot-info',
+      webhook: '/webhook',
+      billstack: '/billstack-webhook'
     },
     timestamp: new Date().toISOString()
   });
@@ -61,6 +63,62 @@ app.post('/webhook', (req, res) => {
   } catch (error) {
     console.error('Webhook error:', error);
     res.status(500).send('Error');
+  }
+});
+
+// ========== BILLSTACK WEBHOOK ENDPOINT ==========
+app.post('/billstack-webhook', async (req, res) => {
+  console.log('💰 Billstack webhook received:', new Date().toISOString());
+  console.log('📦 Body:', JSON.stringify(req.body));
+  
+  try {
+    const { transactionReference, amount, customerReference, status } = req.body;
+    
+    if (status === 'success' && customerReference) {
+      const { getUsers, setUsers, saveAllData, recordTransaction } = require('./database');
+      const users = getUsers();
+      
+      if (users[customerReference]) {
+        const previousBalance = users[customerReference].wallet || 0;
+        users[customerReference].wallet = previousBalance + parseFloat(amount);
+        setUsers(users);
+        await saveAllData();
+        
+        await recordTransaction(customerReference, {
+          type: 'deposit',
+          amount: parseFloat(amount),
+          status: 'completed',
+          description: 'Billstack deposit',
+          reference: transactionReference,
+          previousBalance: previousBalance,
+          newBalance: users[customerReference].wallet
+        });
+        
+        console.log(`✅ Credited ₦${amount} to user ${customerReference}`);
+        
+        // Notify user on Telegram
+        try {
+          const { bot } = require('./bot-core');
+          await bot.telegram.sendMessage(
+            customerReference,
+            `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+            `Amount: ₦${parseFloat(amount).toLocaleString()}\n` +
+            `Reference: ${transactionReference}\n\n` +
+            `New Balance: ₦${users[customerReference].wallet.toLocaleString()}`,
+            { parse_mode: 'Markdown' }
+          );
+        } catch (notifyErr) {
+          console.log('Could not notify user:', customerReference);
+        }
+      } else {
+        console.log(`⚠️ User ${customerReference} not found`);
+      }
+    }
+    
+    res.status(200).json({ status: 'success' });
+  } catch (error) {
+    console.error('❌ Billstack error:', error);
+    res.status(200).json({ status: 'received' });
   }
 });
 
