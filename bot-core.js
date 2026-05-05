@@ -345,6 +345,7 @@ function setupExpressServer(bot) {
   console.log(`   POST /webhook - Telegram webhook`);
   console.log(`   GET  /ping - Debug ping`);
   console.log(`   POST /test-webhook - Test webhook endpoint`);
+  console.log(`   POST /billstack-webhook - Billstack payment webhook`);
 
   return app;
 }
