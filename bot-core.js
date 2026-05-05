@@ -230,7 +230,7 @@ function setupExpressServer(bot) {
     console.error('❌ Deposit handlers failed:', error);
   }
   
-  // ========== BILLSTACK WEBHOOK ENDPOINT ==========
+    // ========== BILLSTACK WEBHOOK ENDPOINT ==========
   app.post('/billstack-webhook', async (req, res) => {
     console.log('💰 Billstack webhook received:', new Date().toISOString());
     console.log('📦 Body:', JSON.stringify(req.body));
@@ -260,7 +260,6 @@ function setupExpressServer(bot) {
           
           console.log(`✅ Credited ₦${amount} to user ${customerReference}`);
           
-          // Notify user on Telegram
           try {
             await bot.telegram.sendMessage(
               customerReference,
@@ -270,11 +269,9 @@ function setupExpressServer(bot) {
               `New Balance: ₦${users[customerReference].wallet.toLocaleString()}`,
               { parse_mode: 'Markdown' }
             );
-          } catch (notifyError) {
+          } catch (e) {
             console.log('Could not notify user:', customerReference);
           }
-        } else {
-          console.log(`⚠️ User ${customerReference} not found`);
         }
       }
       
@@ -284,7 +281,6 @@ function setupExpressServer(bot) {
       res.status(200).json({ status: 'received' });
     }
   });
-  
   // ========== MINI APP API ENDPOINTS ==========
   app.get('/api/device-data', async (req, res) => {
     try {
