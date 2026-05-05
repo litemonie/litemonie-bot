@@ -230,57 +230,11 @@ function setupExpressServer(bot) {
     console.error('❌ Deposit handlers failed:', error);
   }
   
-    // ========== BILLSTACK WEBHOOK ENDPOINT ==========
-  app.post('/billstack-webhook', async (req, res) => {
-    console.log('💰 Billstack webhook received:', new Date().toISOString());
-    console.log('📦 Body:', JSON.stringify(req.body));
-    
-    try {
-      const { transactionReference, amount, customerReference, status } = req.body;
-      
-      if (status === 'success' && customerReference) {
-        const users = require('./database').getUsers();
-        const { setUsers, saveAllData, recordTransaction } = require('./database');
-        
-        if (users[customerReference]) {
-          const previousBalance = users[customerReference].wallet || 0;
-          users[customerReference].wallet = previousBalance + parseFloat(amount);
-          setUsers(users);
-          await saveAllData();
-          
-          await recordTransaction(customerReference, {
-            type: 'deposit',
-            amount: parseFloat(amount),
-            status: 'completed',
-            description: 'Billstack deposit',
-            reference: transactionReference,
-            previousBalance: previousBalance,
-            newBalance: users[customerReference].wallet
-          });
-          
-          console.log(`✅ Credited ₦${amount} to user ${customerReference}`);
-          
-          try {
-            await bot.telegram.sendMessage(
-              customerReference,
-              `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
-              `Amount: ₦${parseFloat(amount).toLocaleString()}\n` +
-              `Reference: ${transactionReference}\n\n` +
-              `New Balance: ₦${users[customerReference].wallet.toLocaleString()}`,
-              { parse_mode: 'Markdown' }
-            );
-          } catch (e) {
-            console.log('Could not notify user:', customerReference);
-          }
-        }
-      }
-      
-      res.status(200).json({ status: 'success' });
-    } catch (error) {
-      console.error('❌ Billstack error:', error);
-      res.status(200).json({ status: 'received' });
-    }
-  });
+     // ========== BILLSTACK WEBHOOK ENDPOINT ==========
+  const billstackWebhook = require('./billstack-webhook');
+  app.use('/billstack-webhook', billstackWebhook);
+
+  
   // ========== MINI APP API ENDPOINTS ==========
   app.get('/api/device-data', async (req, res) => {
     try {
