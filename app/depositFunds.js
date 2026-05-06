@@ -247,46 +247,22 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     
     if (existingAccount && existingAccount.is_active) {
       console.log('✅ User already has active virtual account in database:', existingAccount.account_number);
-      
-      if (CONFIG.TEST_MODE) {
-        console.log('🧪 TEST MODE: Using existing account');
-        return {
-          ...existingAccount,
-          note: 'Existing account retrieved from database (Test Mode)'
-        };
-      }
-      
-      if (CONFIG.BILLSTACK_TOKEN) {
-        try {
-          console.log('🔍 Verifying existing account with Billstack...');
-          // Try to verify account exists on Billstack
-          console.log('✅ Existing account verified (using cached data)');
-          return {
-            ...existingAccount,
-            note: 'Existing active account retrieved from database'
-          };
-        } catch (verifyError) {
-          console.log('⚠️ Could not verify existing account:', verifyError.message);
-        }
-      } else {
-        console.log('✅ Using existing account from database');
-        return {
-          ...existingAccount,
-          note: 'Existing account retrieved from database'
-        };
-      }
+      return {
+        ...existingAccount,
+        note: 'Existing account retrieved from database'
+      };
     }
     
-    // SECOND: Try to retrieve account from Billstack by email (in case database lost it)
+    // SECOND: Try to retrieve account from Billstack by email
     if (!CONFIG.TEST_MODE && CONFIG.BILLSTACK_TOKEN && user.email) {
       console.log(`🔍 Searching for existing account on Billstack by email: ${user.email}`);
       
       try {
-        // Try to find existing account via Billstack's lookup
-        const searchResponse = await billstackClient.post('/v2/thirdparty/virtual-account/lookup', {
-          email: user.email,
-          reference: generateReference(user.telegramId)
-        });
+        // Try different endpoint - get virtual account by customer reference or email
+        // First try: Get by reference (using our reference pattern)
+        const reference = generateReference(user.telegramId);
+        
+        const searchResponse = await billstackClient.get(`/v2/thirdparty/virtual-account/${reference}`);
         
         if (searchResponse.data && searchResponse.data.status && searchResponse.data.data) {
           const accountData = searchResponse.data.data;
@@ -294,12 +270,11 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
           
           console.log('✅ Found existing account on Billstack:', firstAccount.account_number);
           
-          // Save it to our database
           const retrievedAccount = {
             bank_name: firstAccount.bank_name,
             account_number: firstAccount.account_number,
             account_name: firstAccount.account_name,
-            reference: firstAccount.reference || generateReference(user.telegramId),
+            reference: firstAccount.reference || reference,
             provider: 'billstack',
             bank_code: firstAccount.bank_id || CONFIG.DEFAULT_BANK,
             created_at: new Date(firstAccount.created_at || new Date()),
@@ -316,15 +291,57 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
           return retrievedAccount;
         }
       } catch (lookupError) {
-        console.log('📝 No existing account found on Billstack, will create new one');
+        console.log('📝 No existing account found via reference lookup');
         if (lookupError.response?.status !== 404) {
-          console.log('Lookup error details:', lookupError.response?.data || lookupError.message);
+          console.log('Lookup error:', lookupError.response?.data || lookupError.message);
         }
+      }
+      
+      // Second try: Try to list all accounts and find by email (if Billstack supports it)
+      try {
+        const listResponse = await billstackClient.get('/v2/thirdparty/virtual-accounts', {
+          params: { email: user.email, limit: 10 }
+        });
+        
+        if (listResponse.data && listResponse.data.status && listResponse.data.data) {
+          const accounts = listResponse.data.data;
+          if (accounts && accounts.length > 0) {
+            const foundAccount = accounts[0];
+            console.log('✅ Found existing account by email list:', foundAccount.account_number);
+            
+            const retrievedAccount = {
+              bank_name: foundAccount.bank_name,
+              account_number: foundAccount.account_number,
+              account_name: foundAccount.account_name,
+              reference: foundAccount.reference || generateReference(user.telegramId),
+              provider: 'billstack',
+              bank_code: foundAccount.bank_id || CONFIG.DEFAULT_BANK,
+              created_at: new Date(foundAccount.created_at || new Date()),
+              is_active: true,
+              note: 'Retrieved from Billstack list'
+            };
+            
+            await virtualAccounts.create({
+              user_id: user.telegramId,
+              ...retrievedAccount
+            });
+            
+            return retrievedAccount;
+          }
+        }
+      } catch (listError) {
+        console.log('Could not list accounts, may not be supported');
       }
     }
     
-    // THIRD: No existing account found, create new one
-    console.log('🆕 No active virtual account found, creating new one...');
+    // THIRD: Wait a moment and retry creation (to handle the "multiple request" error)
+    if (!CONFIG.TEST_MODE && CONFIG.BILLSTACK_TOKEN) {
+      console.log('⏳ Waiting 3 seconds before retrying account creation...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    
+    // FOURTH: Create new account
+    console.log('🆕 Creating new virtual account...');
     
     if (CONFIG.TEST_MODE) {
       console.log('🧪 TEST MODE: Creating test account');
@@ -361,38 +378,32 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     console.log('📥 Response:', response.data);
 
     if (!response.data.status) {
-      // Check if error is because account already exists
-      if (response.data.message && response.data.message.includes('already exists')) {
-        console.log('⚠️ Account already exists on Billstack, trying to retrieve it...');
+      // If error is about duplicate/multiple requests, try one more time after delay
+      if (response.data.message && response.data.message.includes('Multiple request')) {
+        console.log('⚠️ Multiple request error, waiting 5 seconds and retrying...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
         
-        // Try to retrieve the existing account
-        const retryResponse = await billstackClient.post('/v2/thirdparty/virtual-account/lookup', {
-          email: user.email,
-          reference: reference
-        });
+        const retryResponse = await billstackClient.post(
+          '/v2/thirdparty/generateVirtualAccount/',
+          requestData
+        );
         
-        if (retryResponse.data && retryResponse.data.status && retryResponse.data.data) {
+        if (retryResponse.data && retryResponse.data.status) {
           const accountData = retryResponse.data.data;
-          const firstAccount = accountData.account?.[0] || accountData;
+          const firstAccount = accountData.account[0];
           
-          const retrievedAccount = {
+          console.log(`✅ Account created on retry: ${firstAccount.account_number}`);
+          
+          return {
             bank_name: firstAccount.bank_name,
             account_number: firstAccount.account_number,
             account_name: firstAccount.account_name,
-            reference: firstAccount.reference || reference,
+            reference: reference,
             provider: 'billstack',
             bank_code: firstAccount.bank_id || CONFIG.DEFAULT_BANK,
             created_at: new Date(firstAccount.created_at || new Date()),
-            is_active: true,
-            note: 'Retrieved after creation attempt'
+            is_active: true
           };
-          
-          await virtualAccounts.create({
-            user_id: user.telegramId,
-            ...retrievedAccount
-          });
-          
-          return retrievedAccount;
         }
       }
       throw new Error(response.data.message || 'Failed to create account');
@@ -428,7 +439,6 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     throw new Error(`Virtual account operation failed: ${error.message}`);
   }
 }
-
 /* =====================================================
    2️⃣ MAIN DEPOSIT COMMAND
 ===================================================== */
