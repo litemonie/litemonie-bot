@@ -258,8 +258,6 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
       console.log(`🔍 Searching for existing account on Billstack by email: ${user.email}`);
       
       try {
-        // Try different endpoint - get virtual account by customer reference or email
-        // First try: Get by reference (using our reference pattern)
         const reference = generateReference(user.telegramId);
         
         const searchResponse = await billstackClient.get(`/v2/thirdparty/virtual-account/${reference}`);
@@ -297,7 +295,6 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
         }
       }
       
-      // Second try: Try to list all accounts and find by email (if Billstack supports it)
       try {
         const listResponse = await billstackClient.get('/v2/thirdparty/virtual-accounts', {
           params: { email: user.email, limit: 10 }
@@ -334,7 +331,7 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
       }
     }
     
-    // THIRD: Wait a moment and retry creation (to handle the "multiple request" error)
+    // THIRD: Wait a moment and retry creation
     if (!CONFIG.TEST_MODE && CONFIG.BILLSTACK_TOKEN) {
       console.log('⏳ Waiting 3 seconds before retrying account creation...');
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -378,7 +375,6 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     console.log('📥 Response:', response.data);
 
     if (!response.data.status) {
-      // If error is about duplicate/multiple requests, try one more time after delay
       if (response.data.message && response.data.message.includes('Multiple request')) {
         console.log('⚠️ Multiple request error, waiting 5 seconds and retrying...');
         await new Promise(resolve => setTimeout(resolve, 5000));
@@ -439,6 +435,7 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     throw new Error(`Virtual account operation failed: ${error.message}`);
   }
 }
+
 /* =====================================================
    2️⃣ MAIN DEPOSIT COMMAND
 ===================================================== */
@@ -499,7 +496,8 @@ async function handleDeposit(ctx, users, virtualAccounts) {
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
-            [Markup.button.callback('💳 Create Virtual Account', 'create_virtual_account')],
+            [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+            [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
           ])
@@ -584,7 +582,8 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
-            [Markup.button.callback('💳 Create Virtual Account', 'create_virtual_account')],
+            [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+            [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
           ])
@@ -944,6 +943,174 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
   }
 }
 
+// ========== NEW: RETRIEVE EXISTING ACCOUNT HANDLER ==========
+async function handleRetrieveAccount(ctx, users, virtualAccounts, bot) {
+  console.log('🟢 CALLBACK TRIGGERED: retrieve_account');
+  
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    
+    await ctx.answerCbQuery('🔍 Retrieving account...');
+    
+    await ctx.editMessageText(
+      `🔍 *Retrieving Virtual Account...*\n\n` +
+      `Please wait while we fetch your existing account from Billstack...`,
+      { parse_mode: 'Markdown' }
+    );
+    
+    const user = await users.findById(telegramId);
+    if (!user) {
+      await ctx.reply('❌ User not found. Please /start first.');
+      return;
+    }
+    
+    if (!user.email || !user.phone) {
+      await ctx.reply(
+        `❌ Missing information.\n\n` +
+        `Email: ${user.email ? '✅' : '❌'}\n` +
+        `Phone: ${user.phone ? '✅' : '❌'}\n\n` +
+        `Please use /deposit to set your email and phone first.`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+    
+    try {
+      console.log('🔍 Attempting to retrieve existing account from Billstack...');
+      
+      let retrievedAccount = null;
+      const reference = generateReference(user.telegramId);
+      
+      // Method 1: Try to get by reference
+      try {
+        const response = await billstackClient.get(`/v2/thirdparty/virtual-account/${reference}`);
+        if (response.data && response.data.status && response.data.data) {
+          const accountData = response.data.data;
+          retrievedAccount = accountData.account?.[0] || accountData;
+          console.log('✅ Account retrieved by reference');
+        }
+      } catch (refError) {
+        console.log('Reference lookup failed:', refError.response?.status);
+      }
+      
+      // Method 2: Try to list accounts by email
+      if (!retrievedAccount) {
+        try {
+          const listResponse = await billstackClient.get('/v2/thirdparty/virtual-accounts', {
+            params: { email: user.email, limit: 10 }
+          });
+          if (listResponse.data && listResponse.data.status && listResponse.data.data) {
+            const accounts = listResponse.data.data;
+            if (accounts && accounts.length > 0) {
+              retrievedAccount = accounts[0];
+              console.log('✅ Account retrieved by email list');
+            }
+          }
+        } catch (listError) {
+          console.log('List lookup failed:', listError.response?.status);
+        }
+      }
+      
+      // Method 3: Try to search by customer reference
+      if (!retrievedAccount) {
+        try {
+          const searchResponse = await billstackClient.post('/v2/thirdparty/virtual-account/lookup', {
+            email: user.email,
+            reference: reference
+          });
+          if (searchResponse.data && searchResponse.data.status && searchResponse.data.data) {
+            const accountData = searchResponse.data.data;
+            retrievedAccount = accountData.account?.[0] || accountData;
+            console.log('✅ Account retrieved by lookup endpoint');
+          }
+        } catch (lookupError) {
+          console.log('Lookup failed:', lookupError.response?.status);
+        }
+      }
+      
+      if (retrievedAccount) {
+        console.log('✅ Found existing account:', retrievedAccount.account_number);
+        
+        const accountToSave = {
+          bank_name: retrievedAccount.bank_name,
+          account_number: retrievedAccount.account_number,
+          account_name: retrievedAccount.account_name,
+          reference: retrievedAccount.reference || reference,
+          provider: 'billstack',
+          bank_code: retrievedAccount.bank_id || CONFIG.DEFAULT_BANK,
+          created_at: new Date(retrievedAccount.created_at || new Date()),
+          is_active: true,
+          note: 'Retrieved via retrieve button'
+        };
+        
+        await virtualAccounts.create({
+          user_id: telegramId,
+          ...accountToSave
+        });
+        
+        let message = `✅ *Virtual Account Retrieved!*\n\n`;
+        message += `🏦 *Bank:* ${accountToSave.bank_name}\n`;
+        message += `🔢 *Account Number:* \`${accountToSave.account_number}\`\n`;
+        message += `👤 *Account Name:* ${accountToSave.account_name}\n\n`;
+        message += `💰 *How to Deposit:*\n`;
+        message += `1. Transfer to the account above\n`;
+        message += `2. Use any bank app\n`;
+        message += `3. Minimum: ₦100\n\n`;
+        message += `💡 Funds will be auto-credited within 1-5 minutes!\n\n`;
+        message += `📞 *Support:* @opuenekeke`;
+        
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        });
+        
+      } else {
+        await ctx.editMessageText(
+          `❌ *No Existing Account Found*\n\n` +
+          `We couldn't find an existing virtual account for your email.\n\n` +
+          `💡 Would you like to create a new account instead?`,
+          {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+              [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+              [Markup.button.callback('🏠 Home', 'start')]
+            ])
+          }
+        );
+      }
+      
+    } catch (error) {
+      console.error('❌ Account retrieval error:', error);
+      
+      await ctx.editMessageText(
+        `❌ *Account Retrieval Failed*\n\n` +
+        `${error.message}\n\n` +
+        `💡 *What to do:*\n` +
+        `1. Contact support @opuenekeke\n` +
+        `2. Try manual deposit option\n` +
+        `3. Try creating a new account`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💳 Try Create Account', 'create_virtual_account')],
+            [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+            [Markup.button.callback('📞 Contact Admin', 'contact_admin_direct')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+    }
+    
+  } catch (error) {
+    console.error('❌ Retrieve account error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
 async function handleManualDeposit(ctx) {
   try {
     const { Markup } = require('telegraf');
@@ -1045,7 +1212,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
       const payload = req.body;
       console.log('📦 Webhook payload:', JSON.stringify(payload, null, 2));
       
-      // Check if this is a deposit notification
       if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data?.type === 'RESERVED_ACCOUNT_TRANSACTION') {
         const paymentData = payload.data;
         const amount = parseFloat(paymentData.amount);
@@ -1056,15 +1222,12 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
         console.log(`🏦 Account number: ${accountNumber}`);
         console.log(`🔖 Reference: ${transactionRef}`);
         
-        // ========== FIND USER BY VIRTUAL ACCOUNT NUMBER ==========
         let userId = null;
         let user = null;
         
-        // Get all users from database
         const allUsers = getUsers();
         console.log(`📊 Total users: ${Object.keys(allUsers).length}`);
         
-        // Method 1: Try to find user by virtual account number
         if (virtualAccounts && virtualAccounts.findByAccountNumber) {
           const virtualAccount = await virtualAccounts.findByAccountNumber(accountNumber);
           if (virtualAccount && virtualAccount.user_id) {
@@ -1074,7 +1237,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
           }
         }
         
-        // Method 2: Try by email from webhook
         if (!user && paymentData.customer?.email) {
           const customerEmail = paymentData.customer.email;
           console.log(`📧 Looking for email: ${customerEmail}`);
@@ -1089,7 +1251,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
           }
         }
         
-        // Method 3: Try to extract user ID from merchant_reference
         if (!user && paymentData.merchant_reference) {
           const merchantRef = paymentData.merchant_reference;
           console.log(`🔍 Checking merchant reference: ${merchantRef}`);
@@ -1104,12 +1265,10 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
           }
         }
         
-        // ========== CREDIT THE USER IF FOUND ==========
         if (user && userId) {
           const oldBalance = user.wallet || 0;
           const newBalance = oldBalance + amount;
           
-          // Update user's wallet
           user.wallet = newBalance;
           const allUsersUpdated = getUsers();
           allUsersUpdated[userId] = user;
@@ -1119,7 +1278,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
           console.log(`✅✅✅ SUCCESS: Credited ₦${amount} to user ${userId}`);
           console.log(`   Balance: ₦${oldBalance} → ₦${newBalance}`);
           
-          // Record transaction
           try {
             await recordTransaction(userId, {
               type: 'deposit',
@@ -1134,7 +1292,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
             console.warn('Transaction record error:', err.message);
           }
           
-          // Send Telegram notification
           try {
             await bot.telegram.sendMessage(
               userId,
@@ -1155,7 +1312,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
           console.log(`   Email: ${paymentData.customer?.email}`);
           console.log(`   Merchant Ref: ${paymentData.merchant_reference}`);
           
-          // Log all registered users for debugging
           console.log('📋 Registered users:');
           for (const [id, u] of Object.entries(allUsers)) {
             console.log(`   - ${id}: ${u.firstName || '?'} | Email: ${u.email || '?'}`);
@@ -1193,6 +1349,11 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
     return handleManualDeposit(ctx);
   });
   
+  bot.action('retrieve_account', (ctx) => {
+    console.log('🟢 retrieve_account callback triggered');
+    return handleRetrieveAccount(ctx, users, virtualAccounts, bot);
+  });
+  
   bot.action('cancel_deposit', (ctx) => {
     console.log('🟢 cancel_deposit callback triggered');
     return handleCancelDeposit(ctx);
@@ -1226,6 +1387,7 @@ module.exports = {
   createVirtualAccountForUser,
   handleCreateVirtualAccount,
   handleForceNewAccount,
+  handleRetrieveAccount,
   handleManualDeposit,
   handleCancelDeposit,
   handleChangeEmail,
