@@ -68,6 +68,27 @@ app.get('/debug/user/:id', (req, res) => {
   });
 });
 
+// Temporary endpoint to update user email
+app.post('/debug/update-email/:id/:email', (req, res) => {
+  try {
+    const { getUsers, setUsers, saveAllData } = require('./database');
+    const users = getUsers();
+    const userId = req.params.id;
+    const email = req.params.email;
+    
+    if (users[userId]) {
+      users[userId].email = email;
+      setUsers(users);
+      saveAllData();
+      res.json({ success: true, userId: userId, email: email });
+    } else {
+      res.json({ success: false, message: 'User not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Webhook endpoint for Telegram (if using webhooks)
 app.post('/webhook', (req, res) => {
   try {
