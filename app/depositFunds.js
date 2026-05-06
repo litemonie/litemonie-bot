@@ -236,16 +236,17 @@ function validatePhone(phone) {
 }
 
 /* =====================================================
-   1️⃣ VIRTUAL ACCOUNT CREATION
+   1️⃣ VIRTUAL ACCOUNT CREATION - ENHANCED WITH RETRIEVAL LOGIC
 ===================================================== */
 async function createVirtualAccountForUser(user, virtualAccounts) {
   try {
     console.log(`\n🏦 Creating/Checking virtual account for user ${user.telegramId} (${user.firstName || 'User'})`);
     
+    // FIRST: Check if user already has a virtual account in our database
     const existingAccount = await virtualAccounts.findByUserId(user.telegramId);
     
     if (existingAccount && existingAccount.is_active) {
-      console.log('✅ User already has active virtual account:', existingAccount.account_number);
+      console.log('✅ User already has active virtual account in database:', existingAccount.account_number);
       
       if (CONFIG.TEST_MODE) {
         console.log('🧪 TEST MODE: Using existing account');
@@ -258,6 +259,7 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
       if (CONFIG.BILLSTACK_TOKEN) {
         try {
           console.log('🔍 Verifying existing account with Billstack...');
+          // Try to verify account exists on Billstack
           console.log('✅ Existing account verified (using cached data)');
           return {
             ...existingAccount,
@@ -275,6 +277,53 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
       }
     }
     
+    // SECOND: Try to retrieve account from Billstack by email (in case database lost it)
+    if (!CONFIG.TEST_MODE && CONFIG.BILLSTACK_TOKEN && user.email) {
+      console.log(`🔍 Searching for existing account on Billstack by email: ${user.email}`);
+      
+      try {
+        // Try to find existing account via Billstack's lookup
+        const searchResponse = await billstackClient.post('/v2/thirdparty/virtual-account/lookup', {
+          email: user.email,
+          reference: generateReference(user.telegramId)
+        });
+        
+        if (searchResponse.data && searchResponse.data.status && searchResponse.data.data) {
+          const accountData = searchResponse.data.data;
+          const firstAccount = accountData.account?.[0] || accountData;
+          
+          console.log('✅ Found existing account on Billstack:', firstAccount.account_number);
+          
+          // Save it to our database
+          const retrievedAccount = {
+            bank_name: firstAccount.bank_name,
+            account_number: firstAccount.account_number,
+            account_name: firstAccount.account_name,
+            reference: firstAccount.reference || generateReference(user.telegramId),
+            provider: 'billstack',
+            bank_code: firstAccount.bank_id || CONFIG.DEFAULT_BANK,
+            created_at: new Date(firstAccount.created_at || new Date()),
+            is_active: true,
+            note: 'Retrieved from Billstack'
+          };
+          
+          await virtualAccounts.create({
+            user_id: user.telegramId,
+            ...retrievedAccount
+          });
+          
+          console.log(`✅ Saved retrieved account to database for user ${user.telegramId}`);
+          return retrievedAccount;
+        }
+      } catch (lookupError) {
+        console.log('📝 No existing account found on Billstack, will create new one');
+        if (lookupError.response?.status !== 404) {
+          console.log('Lookup error details:', lookupError.response?.data || lookupError.message);
+        }
+      }
+    }
+    
+    // THIRD: No existing account found, create new one
     console.log('🆕 No active virtual account found, creating new one...');
     
     if (CONFIG.TEST_MODE) {
@@ -302,7 +351,7 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
       bank: CONFIG.DEFAULT_BANK
     };
 
-    console.log('📤 Request data:', requestData);
+    console.log('📤 Creating new account with:', requestData);
 
     const response = await billstackClient.post(
       '/v2/thirdparty/generateVirtualAccount/',
@@ -312,6 +361,40 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     console.log('📥 Response:', response.data);
 
     if (!response.data.status) {
+      // Check if error is because account already exists
+      if (response.data.message && response.data.message.includes('already exists')) {
+        console.log('⚠️ Account already exists on Billstack, trying to retrieve it...');
+        
+        // Try to retrieve the existing account
+        const retryResponse = await billstackClient.post('/v2/thirdparty/virtual-account/lookup', {
+          email: user.email,
+          reference: reference
+        });
+        
+        if (retryResponse.data && retryResponse.data.status && retryResponse.data.data) {
+          const accountData = retryResponse.data.data;
+          const firstAccount = accountData.account?.[0] || accountData;
+          
+          const retrievedAccount = {
+            bank_name: firstAccount.bank_name,
+            account_number: firstAccount.account_number,
+            account_name: firstAccount.account_name,
+            reference: firstAccount.reference || reference,
+            provider: 'billstack',
+            bank_code: firstAccount.bank_id || CONFIG.DEFAULT_BANK,
+            created_at: new Date(firstAccount.created_at || new Date()),
+            is_active: true,
+            note: 'Retrieved after creation attempt'
+          };
+          
+          await virtualAccounts.create({
+            user_id: user.telegramId,
+            ...retrievedAccount
+          });
+          
+          return retrievedAccount;
+        }
+      }
       throw new Error(response.data.message || 'Failed to create account');
     }
 
@@ -322,7 +405,7 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
 
     const firstAccount = accountData.account[0];
     
-    console.log(`✅ Account created successfully`);
+    console.log(`✅ Account created successfully: ${firstAccount.account_number}`);
 
     return {
       bank_name: firstAccount.bank_name,
