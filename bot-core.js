@@ -1527,6 +1527,20 @@ async function setupCallbackHandlers(bot) {
     await saveAllData();
     await ctx.answerCbQuery();
   });
+
+ // ========== PROFILE CALLBACKS ==========
+  // Profile refresh callback
+  bot.action('refresh_profile', async (ctx) => {
+    const { showProfile } = require('./profile');
+    await ctx.answerCbQuery();
+    await showProfile(ctx, virtualAccounts);
+  });
+
+  // Admin view all users callback
+  bot.action('admin_view_all_users', async (ctx) => {
+    const { adminViewAllUsers } = require('./profile');
+    await adminViewAllUsers(ctx);
+  });
   
   console.log('✅ All callbacks registered');
 }
