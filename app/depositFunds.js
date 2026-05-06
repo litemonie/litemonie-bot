@@ -28,6 +28,8 @@ function getTransactionManagers() {
 const { 
   getUsers, 
   getTransactions,
+  setUsers,
+  saveAllData,
   recordTransaction  // Use the unified recording function
 } = require('../database');
 
@@ -958,101 +960,103 @@ async function handleContactAdminDirect(ctx) {
 }
 
 /* =====================================================
-   5️⃣ WEBHOOK HANDLER WITH TRANSACTION TRACKING
+   5️⃣ WEBHOOK HANDLER WITH TRANSACTION TRACKING - FIXED
 ===================================================== */
 function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
   return async (req, res) => {
-    console.log('📥 Webhook received');
+    console.log('📥 Billstack webhook received');
     
     try {
       const payload = req.body;
       console.log('Webhook payload:', JSON.stringify(payload, null, 2));
       
-      // Verify webhook signature if secret is set
-      if (CONFIG.BILLSTACK_WEBHOOK_SECRET) {
-        const signature = req.headers['x-billstack-signature'];
-        // Add signature verification here if needed
-      }
-      
-      // Check if this is a deposit notification
-      if (payload.event === 'deposit.successful' || payload.type === 'deposit') {
-        const { 
-          account_number, 
-          amount, 
-          reference,
-          transaction_reference,
-          status,
-          metadata
-        } = payload.data || payload;
+      // Check if this is a deposit notification (Billstack format - FIXED)
+      if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data?.type === 'RESERVED_ACCOUNT_TRANSACTION') {
+        const paymentData = payload.data;
+        const amount = parseFloat(paymentData.amount);
+        const transactionRef = paymentData.reference || paymentData.transaction_ref;
+        const accountNumber = paymentData.account?.account_number;
+        const customerEmail = paymentData.customer?.email;
         
-        console.log(`💰 Deposit received: ₦${amount} to account ${account_number}`);
+        console.log(`💰 Deposit received: ₦${amount} to account ${accountNumber}`);
+        console.log(`📧 Customer email: ${customerEmail}`);
+        console.log(`🔖 Reference: ${transactionRef}`);
         
-        // Find user by virtual account number
-        const virtualAccount = await virtualAccounts.findByAccountNumber(account_number);
+        // Find user by email
+        let userId = null;
+        let user = null;
         
-        if (virtualAccount) {
-          const userId = virtualAccount.user_id;
-          const user = await users.findById(userId);
+        // Get all users and search by email
+        const allUsers = getUsers();
+        
+        for (const [id, userData] of Object.entries(allUsers)) {
+          if (userData.email === customerEmail) {
+            userId = id;
+            user = userData;
+            break;
+          }
+        }
+        
+        if (user && userId) {
+          // Credit user's wallet
+          const oldBalance = user.wallet || 0;
+          user.wallet = oldBalance + amount;
           
-          if (user) {
-            // Credit user's wallet
-            const oldBalance = user.wallet || 0;
-            user.wallet = oldBalance + parseFloat(amount);
-            await users.update(userId, { wallet: user.wallet });
-            
-            console.log(`✅ Credited ₦${amount} to user ${userId}. New balance: ₦${user.wallet}`);
-            
-            // ===== RECORD DEPOSIT TRANSACTION =====
-            const depositRef = transaction_reference || reference || `DEP${Date.now()}`;
-            
-            try {
-              const { recordTransaction } = require('../database');
-              if (typeof recordTransaction === 'function') {
-                await recordTransaction(userId, {
-                  id: depositRef,
-                  type: 'deposit',
-                  amount: parseFloat(amount),
-                  status: 'completed',
-                  description: `Wallet deposit via virtual account`,
-                  category: 'deposit',
-                  reference: depositRef,
-                  metadata: {
-                    account_number,
-                    bank_name: virtualAccount.bank_name,
-                    webhook_payload: payload
-                  }
-                });
-                console.log(`✅ Deposit transaction recorded: ${depositRef}`);
+          // Save updated user
+          const allUsersUpdated = getUsers();
+          allUsersUpdated[userId] = user;
+          setUsers(allUsersUpdated);
+          await saveAllData();
+          
+          console.log(`✅ Credited ₦${amount} to user ${userId}`);
+          console.log(`   Old balance: ₦${oldBalance} → New balance: ₦${user.wallet}`);
+          
+          // Record transaction
+          try {
+            await recordTransaction(userId, {
+              type: 'deposit',
+              amount: amount,
+              status: 'completed',
+              description: `Wallet deposit via virtual account`,
+              reference: transactionRef,
+              metadata: {
+                account_number: accountNumber,
+                webhook_payload: payload
               }
-            } catch (dbError) {
-              console.warn('⚠️ Could not record deposit:', dbError.message);
-            }
-            
-            // Notify user
-            try {
-              await bot.telegram.sendMessage(
-                userId,
-                `💰 *Deposit Received!*\n\n` +
-                `Amount: ₦${amount.toLocaleString()}\n` +
-                `New Balance: ₦${user.wallet.toLocaleString()}\n` +
-                `Reference: \`${depositRef}\`\n\n` +
-                `Thank you for using our service!`,
-                { parse_mode: 'Markdown' }
-              );
-            } catch (notifyError) {
-              console.error('Failed to notify user:', notifyError.message);
-            }
+            });
+            console.log(`✅ Deposit transaction recorded: ${transactionRef}`);
+          } catch (dbError) {
+            console.warn('⚠️ Could not record deposit:', dbError.message);
+          }
+          
+          // Notify user on Telegram
+          try {
+            await bot.telegram.sendMessage(
+              userId,
+              `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+              `Amount: ₦${amount.toLocaleString()}\n` +
+              `Reference: \`${transactionRef}\`\n\n` +
+              `New Balance: ₦${user.wallet.toLocaleString()}\n\n` +
+              `Thank you for using our service!`,
+              { parse_mode: 'Markdown' }
+            );
+            console.log(`✅ User ${userId} notified of deposit`);
+          } catch (notifyError) {
+            console.error('Failed to notify user:', notifyError.message);
           }
         } else {
-          console.log(`⚠️ No user found for account number: ${account_number}`);
+          console.log(`⚠️ No user found for email: ${customerEmail}`);
+          console.log('Available user emails:', Object.values(getUsers()).map(u => u.email));
         }
+      } else {
+        console.log('📋 Webhook received but not a deposit notification:', payload.event);
       }
       
       res.status(200).json({ status: 'ok' });
       
     } catch (error) {
       console.error('❌ Webhook error:', error);
-      res.status(500).json({ error: error.message });
+      res.status(200).json({ status: 'received' });
     }
   };
 }
