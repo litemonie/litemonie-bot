@@ -512,6 +512,30 @@ async function setupCommands(bot) {
     
     await ctx.reply(message, { parse_mode: 'MarkdownV2' });
   });
+
+ // ========== ADMIN SET USER EMAIL COMMAND ==========
+  bot.command('setuseremail', async (ctx) => {
+    const adminId = ctx.from.id.toString();
+    if (!isAdmin(adminId)) return ctx.reply('❌ Admin only');
+    
+    const args = ctx.message.text.split(' ');
+    if (args.length < 3) {
+      return ctx.reply('Usage: /setuseremail [user_id] [email]');
+    }
+    
+    const userId = args[1];
+    const email = args[2];
+    const users = getUsers();
+    
+    if (!users[userId]) return ctx.reply('❌ User not found');
+    
+    users[userId].email = email;
+    setUsers(users);
+    await saveAllData();
+    
+    await ctx.reply(`✅ Email set for user ${userId}: ${email}`);
+  });
+
   
   // ========== MINI APP COMMANDS ==========
   bot.command('app', async (ctx) => {
