@@ -29,6 +29,7 @@ const buyCardPins = require('./app/Card pins/buyCardPins');
 const buyExamPins = require('./app/Bill/exam');
 const buyElectricity = require('./app/Bill/light');
 const buyTVSubscription = require('./app/Bill/tv');
+const { showProfile } = require('./profile');
 
 // Global bot instance
 let botInstance = null;
@@ -366,13 +367,13 @@ async function setupCommands(bot) {
       ['📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins'],
       ['📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer'],
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
-      ['🛂 KYC Status', '🛠️ Admin Panel', '🆘 Help & Support']
+      ['🛂 KYC Status', '🛠️ Admin Panel', '👤 Profile', '🆘 Help & Support']
     ] : [
       ['📱 Device Financing', '📺 TV Subscription', '💡 Electricity Bill'],
       ['📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins'],
       ['📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer'],
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
-      ['🛂 KYC Status', '🆘 Help & Support']
+      ['🛂 KYC Status', '👤 Profile', '🆘 Help & Support']
     ];
     
     await ctx.reply(
@@ -384,7 +385,7 @@ async function setupCommands(bot) {
       `• 📞 Buy Airtime\n• 📡 Buy Data\n• 🎫 Card Pins\n• 📝 Exam Pins\n` +
       `• 🏦 Money Transfer\n• 💰 Wallet Balance\n• 💳 Deposit Funds\n` +
       `• 📜 Transaction History\n• 🛂 KYC Status\n` +
-      `${isUserAdmin ? '• 🛠️ Admin Panel\n' : ''}• 🆘 Help & Support\n\n` +
+      `${isUserAdmin ? '• 🛠️ Admin Panel\n' : ''}• 👤 Profile\n• 🆘 Help & Support\n\n` +
       `📞 \\*Support\\:* @opuenekeke`,
       { parse_mode: 'MarkdownV2', ...Markup.keyboard(keyboard).resize() }
     );
@@ -534,6 +535,11 @@ async function setupCommands(bot) {
     await saveAllData();
     
     await ctx.reply(`✅ Email set for user ${userId}: ${email}`);
+  });
+
+  // ========== PROFILE COMMAND ==========
+  bot.command('profile', async (ctx) => {
+    await showProfile(ctx);
   });
 
   
@@ -934,6 +940,10 @@ async function setupMenuHandlers(bot) {
     );
   });
   
+  bot.hears('👤 Profile', async (ctx) => {
+    await showProfile(ctx);
+  });
+  
   bot.hears('🆘 Help & Support', async (ctx) => {
     await ctx.reply(
       `🆘 \\*HELP & SUPPORT\\*\n\n` +
@@ -941,6 +951,7 @@ async function setupMenuHandlers(bot) {
       `/start - Start bot\n` +
       `/setpin [1234] - Set PIN\n` +
       `/balance - Check balance\n` +
+      `/profile - View your profile\n` +
       `/app - Open Mini App\n` +
       `/status - Device status\n` +
       `/unlock - Request unlock\n` +
@@ -1450,13 +1461,13 @@ async function setupCallbackHandlers(bot) {
       ['📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins'],
       ['📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer'],
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
-      ['🛂 KYC Status', '🛠️ Admin Panel', '🆘 Help & Support']
+      ['🛂 KYC Status', '🛠️ Admin Panel', '👤 Profile', '🆘 Help & Support']
     ] : [
       ['📱 Device Financing', '📺 TV Subscription', '💡 Electricity Bill'],
       ['📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins'],
       ['📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer'],
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
-      ['🛂 KYC Status', '🆘 Help & Support']
+      ['🛂 KYC Status', '👤 Profile', '🆘 Help & Support']
     ];
     
     await ctx.reply(
