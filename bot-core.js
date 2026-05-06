@@ -1528,7 +1528,7 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
 
- // ========== PROFILE CALLBACKS ==========
+  // ========== PROFILE CALLBACKS ==========
   // Profile refresh callback
   bot.action('refresh_profile', async (ctx) => {
     const { showProfile } = require('./profile');
