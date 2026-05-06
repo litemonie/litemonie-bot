@@ -30,7 +30,7 @@ const {
   getTransactions,
   setUsers,
   saveAllData,
-  recordTransaction  // Use the unified recording function
+  recordTransaction
 } = require('../database');
 
 /* =====================================================
@@ -236,19 +236,17 @@ function validatePhone(phone) {
 }
 
 /* =====================================================
-   1️⃣ VIRTUAL ACCOUNT CREATION - UPDATED WITH DUPLICATION CHECK
+   1️⃣ VIRTUAL ACCOUNT CREATION
 ===================================================== */
 async function createVirtualAccountForUser(user, virtualAccounts) {
   try {
     console.log(`\n🏦 Creating/Checking virtual account for user ${user.telegramId} (${user.firstName || 'User'})`);
     
-    // FIRST: Check if user already has a virtual account in our database
     const existingAccount = await virtualAccounts.findByUserId(user.telegramId);
     
     if (existingAccount && existingAccount.is_active) {
       console.log('✅ User already has active virtual account:', existingAccount.account_number);
       
-      // If in test mode, return existing account
       if (CONFIG.TEST_MODE) {
         console.log('🧪 TEST MODE: Using existing account');
         return {
@@ -257,13 +255,9 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
         };
       }
       
-      // Try to verify with Billstack API if we have credentials
       if (CONFIG.BILLSTACK_TOKEN) {
         try {
           console.log('🔍 Verifying existing account with Billstack...');
-          // Note: You could add a Billstack API verification call here
-          // For example: billstackClient.get(`/accounts/${existingAccount.account_number}`)
-          // For now, we'll just log and return the existing account
           console.log('✅ Existing account verified (using cached data)');
           return {
             ...existingAccount,
@@ -271,7 +265,6 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
           };
         } catch (verifyError) {
           console.log('⚠️ Could not verify existing account:', verifyError.message);
-          // Continue to create a new one
         }
       } else {
         console.log('✅ Using existing account from database');
@@ -282,7 +275,6 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
       }
     }
     
-    // If no existing account or account is not active, create new one
     console.log('🆕 No active virtual account found, creating new one...');
     
     if (CONFIG.TEST_MODE) {
@@ -528,10 +520,8 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
     
     console.log(`👤 User ${telegramId} clicked create_virtual_account`);
     
-    // First answer the callback query to remove loading state
     await ctx.answerCbQuery('⏳ Creating account...');
     
-    // Edit the message to show processing
     try {
       await ctx.editMessageText(
         `🔄 *Creating Virtual Account...*\n\n` +
@@ -539,7 +529,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         { parse_mode: 'Markdown' }
       );
     } catch (editError) {
-      // If edit fails, send a new message
       await ctx.reply(
         `🔄 *Creating Virtual Account...*\n\n` +
         `⏳ Please wait...`,
@@ -573,7 +562,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
     try {
       console.log('🚀 Starting virtual account creation...');
       
-      // Check if user already has an account first
       const existingAccount = await virtualAccounts.findByUserId(telegramId);
       
       if (existingAccount && existingAccount.is_active) {
@@ -619,7 +607,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         return;
       }
       
-      // If no existing account, create new one
       const newAccount = await createVirtualAccountForUser({
         telegramId: user.telegramId,
         email: user.email,
@@ -635,7 +622,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         ...newAccount
       });
       
-      // ===== RECORD VIRTUAL ACCOUNT CREATION TRANSACTION =====
       try {
         const { recordTransaction } = require('../database');
         if (typeof recordTransaction === 'function') {
@@ -698,7 +684,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         });
       }
       
-      // Send reminder
       setTimeout(async () => {
         try {
           await bot.telegram.sendMessage(
@@ -783,14 +768,12 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
       return;
     }
     
-    // Deactivate old account if exists
     const oldAccount = await virtualAccounts.findByUserId(telegramId);
     if (oldAccount) {
       await virtualAccounts.update(oldAccount.id, { is_active: false });
       console.log(`🗑️ Deactivated old account: ${oldAccount.account_number}`);
     }
     
-    // Create new account
     const newAccount = await createVirtualAccountForUser({
       telegramId: user.telegramId,
       email: user.email,
@@ -805,7 +788,6 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
       ...newAccount
     });
     
-    // ===== RECORD NEW VIRTUAL ACCOUNT CREATION =====
     try {
       const { recordTransaction } = require('../database');
       if (typeof recordTransaction === 'function') {
@@ -960,7 +942,7 @@ async function handleContactAdminDirect(ctx) {
 }
 
 /* =====================================================
-   5️⃣ WEBHOOK HANDLER WITH TRANSACTION TRACKING - FIXED
+   5️⃣ WEBHOOK HANDLER WITH TRANSACTION TRACKING - FIXED VERSION
 ===================================================== */
 function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
   return async (req, res) => {
@@ -968,48 +950,81 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
     
     try {
       const payload = req.body;
-      console.log('Webhook payload:', JSON.stringify(payload, null, 2));
+      console.log('📦 Webhook payload:', JSON.stringify(payload, null, 2));
       
-      // Check if this is a deposit notification (Billstack format - FIXED)
+      // Check if this is a deposit notification
       if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data?.type === 'RESERVED_ACCOUNT_TRANSACTION') {
         const paymentData = payload.data;
         const amount = parseFloat(paymentData.amount);
-        const transactionRef = paymentData.reference || paymentData.transaction_ref;
+        const transactionRef = paymentData.transaction_ref || paymentData.reference;
         const accountNumber = paymentData.account?.account_number;
-        const customerEmail = paymentData.customer?.email;
         
-        console.log(`💰 Deposit received: ₦${amount} to account ${accountNumber}`);
-        console.log(`📧 Customer email: ${customerEmail}`);
+        console.log(`💰 Deposit received: ₦${amount}`);
+        console.log(`🏦 Account number: ${accountNumber}`);
         console.log(`🔖 Reference: ${transactionRef}`);
         
-        // Find user by email
+        // ========== FIND USER BY VIRTUAL ACCOUNT NUMBER ==========
         let userId = null;
         let user = null;
         
-        // Get all users and search by email
+        // Get all users from database
         const allUsers = getUsers();
+        console.log(`📊 Total users: ${Object.keys(allUsers).length}`);
         
-        for (const [id, userData] of Object.entries(allUsers)) {
-          if (userData.email === customerEmail) {
-            userId = id;
-            user = userData;
-            break;
+        // Method 1: Try to find user by virtual account number
+        if (virtualAccounts && virtualAccounts.findByAccountNumber) {
+          const virtualAccount = await virtualAccounts.findByAccountNumber(accountNumber);
+          if (virtualAccount && virtualAccount.user_id) {
+            userId = virtualAccount.user_id;
+            user = allUsers[userId];
+            console.log(`✅ User found by account number: ${userId}`);
           }
         }
         
-        if (user && userId) {
-          // Credit user's wallet
-          const oldBalance = user.wallet || 0;
-          user.wallet = oldBalance + amount;
+        // Method 2: Try by email from webhook
+        if (!user && paymentData.customer?.email) {
+          const customerEmail = paymentData.customer.email;
+          console.log(`📧 Looking for email: ${customerEmail}`);
           
-          // Save updated user
+          for (const [id, userData] of Object.entries(allUsers)) {
+            if (userData.email === customerEmail) {
+              userId = id;
+              user = userData;
+              console.log(`✅ User found by email: ${userId}`);
+              break;
+            }
+          }
+        }
+        
+        // Method 3: Try to extract user ID from merchant_reference
+        if (!user && paymentData.merchant_reference) {
+          const merchantRef = paymentData.merchant_reference;
+          console.log(`🔍 Checking merchant reference: ${merchantRef}`);
+          
+          const match = merchantRef.match(/VTU-(\d+)-/);
+          if (match && match[1]) {
+            userId = match[1];
+            user = allUsers[userId];
+            if (user) {
+              console.log(`✅ User found by merchant reference: ${userId}`);
+            }
+          }
+        }
+        
+        // ========== CREDIT THE USER IF FOUND ==========
+        if (user && userId) {
+          const oldBalance = user.wallet || 0;
+          const newBalance = oldBalance + amount;
+          
+          // Update user's wallet
+          user.wallet = newBalance;
           const allUsersUpdated = getUsers();
           allUsersUpdated[userId] = user;
           setUsers(allUsersUpdated);
           await saveAllData();
           
-          console.log(`✅ Credited ₦${amount} to user ${userId}`);
-          console.log(`   Old balance: ₦${oldBalance} → New balance: ₦${user.wallet}`);
+          console.log(`✅✅✅ SUCCESS: Credited ₦${amount} to user ${userId}`);
+          console.log(`   Balance: ₦${oldBalance} → ₦${newBalance}`);
           
           // Record transaction
           try {
@@ -1019,37 +1034,40 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
               status: 'completed',
               description: `Wallet deposit via virtual account`,
               reference: transactionRef,
-              metadata: {
-                account_number: accountNumber,
-                webhook_payload: payload
-              }
+              metadata: { account_number: accountNumber }
             });
-            console.log(`✅ Deposit transaction recorded: ${transactionRef}`);
-          } catch (dbError) {
-            console.warn('⚠️ Could not record deposit:', dbError.message);
+            console.log(`✅ Transaction recorded`);
+          } catch (err) {
+            console.warn('Transaction record error:', err.message);
           }
           
-          // Notify user on Telegram
+          // Send Telegram notification
           try {
             await bot.telegram.sendMessage(
               userId,
               `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
               `Amount: ₦${amount.toLocaleString()}\n` +
               `Reference: \`${transactionRef}\`\n\n` +
-              `New Balance: ₦${user.wallet.toLocaleString()}\n\n` +
-              `Thank you for using our service!`,
+              `New Balance: ₦${newBalance.toLocaleString()}\n\n` +
+              `Thank you for using Liteway!`,
               { parse_mode: 'Markdown' }
             );
-            console.log(`✅ User ${userId} notified of deposit`);
-          } catch (notifyError) {
-            console.error('Failed to notify user:', notifyError.message);
+            console.log(`✅ Telegram notification sent to ${userId}`);
+          } catch (notifyErr) {
+            console.error('Notification error:', notifyErr.message);
           }
         } else {
-          console.log(`⚠️ No user found for email: ${customerEmail}`);
-          console.log('Available user emails:', Object.values(getUsers()).map(u => u.email));
+          console.log(`❌❌❌ CRITICAL: Could not find user for deposit!`);
+          console.log(`   Account: ${accountNumber}`);
+          console.log(`   Email: ${paymentData.customer?.email}`);
+          console.log(`   Merchant Ref: ${paymentData.merchant_reference}`);
+          
+          // Log all registered users for debugging
+          console.log('📋 Registered users:');
+          for (const [id, u] of Object.entries(allUsers)) {
+            console.log(`   - ${id}: ${u.firstName || '?'} | Email: ${u.email || '?'}`);
+          }
         }
-      } else {
-        console.log('📋 Webhook received but not a deposit notification:', payload.event);
       }
       
       res.status(200).json({ status: 'ok' });
@@ -1067,7 +1085,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
 function setupDepositHandlers(bot, users, virtualAccounts) {
   console.log('\n📋 SETTING UP DEPOSIT CALLBACK HANDLERS...');
   
-  // Register all callback handlers
   bot.action('create_virtual_account', (ctx) => {
     console.log('🟢 create_virtual_account callback triggered');
     return handleCreateVirtualAccount(ctx, users, virtualAccounts, bot);
@@ -1110,31 +1127,18 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
    7️⃣ EXPORTS
 ===================================================== */
 module.exports = {
-  // Main handlers
   handleDeposit,
   handleDepositText,
-  
-  // Session manager
   sessionManager,
-  
-  // Virtual account function - Updated to accept virtualAccounts parameter
   createVirtualAccountForUser,
-  
-  // Callback handlers (for registration)
   handleCreateVirtualAccount,
   handleForceNewAccount,
   handleManualDeposit,
   handleCancelDeposit,
   handleChangeEmail,
   handleContactAdminDirect,
-  
-  // Setup function
   setupDepositHandlers,
-  
-  // Webhook handler with transaction tracking
   handleBillstackWebhook,
-  
-  // Utility functions
   generateReference,
   validateEmail,
   validatePhone,
