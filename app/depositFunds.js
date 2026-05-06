@@ -55,7 +55,7 @@ const CONFIG = {
   SUPPORTED_BANKS: ['9PSB', 'SAFEHAVEN', 'PROVIDUS', 'BANKLY', 'PALMPAY'],
   DEFAULT_BANK: 'PALMPAY',
   
-  TEST_MODE: !(BILLSTACK_SECRET_KEY || BILLSTACK_API_KEY) || NODE_ENV === 'development',
+  TEST_MODE: !(BILLSTACK_SECRET_KEY || BILLSTACK_API_KEY),
   TEST_VIRTUAL_ACCOUNT: {
     bank_name: 'PALMPAY BANK',
     account_number: `TEST${Date.now().toString().slice(-6)}`,
