@@ -55,6 +55,19 @@ app.get('/bot-info', async (req, res) => {
   }
 });
 
+
+// Debug endpoint - check user by ID
+app.get('/debug/user/:id', (req, res) => {
+  const { getUsers } = require('./database');
+  const users = getUsers();
+  const user = users[req.params.id];
+  res.json({ 
+    userId: req.params.id, 
+    user: user ? { email: user.email, wallet: user.wallet, firstName: user.firstName } : null,
+    allUserIds: Object.keys(users)
+  });
+});
+
 // Webhook endpoint for Telegram (if using webhooks)
 app.post('/webhook', (req, res) => {
   try {
