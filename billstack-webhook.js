@@ -1,5 +1,5 @@
 // ==================== billstack-webhook.js ====================
-// SIMPLE WORKING VERSION - Replace your old file with this
+// FINAL WORKING VERSION
 // =============================================================
 
 const express = require('express');
@@ -12,75 +12,103 @@ router.post('/', async (req, res) => {
     
     try {
         const payload = req.body;
+        console.log('📦 Processing payment...');
         
-        // Check if this is a payment notification
-        if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data?.type === 'RESERVED_ACCOUNT_TRANSACTION') {
-            const paymentData = payload.data;
-            const amount = parseFloat(paymentData.amount);
-            const transactionRef = paymentData.transaction_ref || paymentData.reference;
-            const merchantReference = paymentData.merchant_reference;
-            
-            console.log(`💰 Deposit Amount: ₦${amount}`);
-            console.log(`📝 Merchant Reference: ${merchantReference}`);
-            
-            // Extract User ID from merchant_reference (VTU-7197363326-xxx)
-            let userId = null;
-            if (merchantReference) {
-                const match = merchantReference.match(/VTU-(\d+)-/);
-                if (match && match[1]) {
-                    userId = match[1];
-                    console.log(`✅ Extracted User ID: ${userId}`);
+        // Extract data from payload
+        let amount = null;
+        let merchantReference = null;
+        let transactionRef = null;
+        let customerEmail = null;
+        
+        // Handle different payload structures
+        if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data) {
+            amount = payload.data.amount;
+            merchantReference = payload.data.merchant_reference;
+            transactionRef = payload.data.transaction_ref;
+            customerEmail = payload.data.customer?.email;
+        } else {
+            // Direct data structure (for test)
+            amount = payload.amount || payload.data?.amount;
+            merchantReference = payload.merchant_reference || payload.data?.merchant_reference;
+            transactionRef = payload.transaction_ref || payload.data?.transaction_ref;
+            customerEmail = payload.customer?.email || payload.data?.customer?.email;
+        }
+        
+        console.log(`💰 Amount: ₦${amount}`);
+        console.log(`📝 Merchant Ref: ${merchantReference}`);
+        console.log(`📧 Email: ${customerEmail}`);
+        
+        // Extract user ID from merchant_reference
+        let userId = null;
+        if (merchantReference) {
+            const match = merchantReference.match(/VTU-(\d+)-/);
+            if (match && match[1]) {
+                userId = match[1];
+                console.log(`✅ Extracted User ID: ${userId}`);
+            }
+        }
+        
+        // If not found by merchant ref, try by email
+        if (!userId && customerEmail) {
+            const users = getUsers();
+            for (const [id, user] of Object.entries(users)) {
+                if (user.email === customerEmail) {
+                    userId = id;
+                    console.log(`✅ Found User ID by email: ${userId}`);
+                    break;
                 }
             }
+        }
+        
+        // Credit the user
+        if (userId) {
+            const users = getUsers();
+            const user = users[userId];
             
-            if (userId) {
-                const users = getUsers();
-                const user = users[userId];
+            if (user) {
+                const previousBalance = user.wallet || 0;
+                const newBalance = previousBalance + parseFloat(amount);
                 
-                if (user) {
-                    const previousBalance = user.wallet || 0;
-                    const newBalance = previousBalance + amount;
-                    
-                    user.wallet = newBalance;
-                    users[userId] = user;
-                    setUsers(users);
-                    await saveAllData();
-                    
-                    console.log(`✅✅✅ CREDITED: ₦${amount} to user ${userId}`);
-                    console.log(`   Old Balance: ₦${previousBalance} → New Balance: ₦${newBalance}`);
-                    
-                    // Record transaction
-                    await recordTransaction(userId, {
-                        type: 'deposit',
-                        amount: amount,
-                        status: 'completed',
-                        description: 'Billstack deposit',
-                        reference: transactionRef,
-                        previousBalance: previousBalance,
-                        newBalance: newBalance
-                    });
-                    
-                    // Notify user
-                    try {
-                        const { bot } = require('./bot-core');
-                        await bot.telegram.sendMessage(
-                            userId,
-                            `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
-                            `Amount: ₦${amount.toLocaleString()}\n` +
-                            `Reference: ${transactionRef}\n\n` +
-                            `New Balance: ₦${newBalance.toLocaleString()}`,
-                            { parse_mode: 'Markdown' }
-                        );
-                        console.log(`✅ User notified on Telegram`);
-                    } catch (notifyErr) {
-                        console.log('Could not notify user');
-                    }
-                } else {
-                    console.log(`❌ User ${userId} not found in database`);
+                user.wallet = newBalance;
+                users[userId] = user;
+                setUsers(users);
+                await saveAllData();
+                
+                console.log(`✅✅✅ CREDITED: ₦${amount} to user ${userId}`);
+                console.log(`   Balance: ₦${previousBalance} → ₦${newBalance}`);
+                
+                // Record transaction
+                await recordTransaction(userId, {
+                    type: 'deposit',
+                    amount: parseFloat(amount),
+                    status: 'completed',
+                    description: 'Billstack deposit',
+                    reference: transactionRef || 'WEBHOOK_TEST',
+                    previousBalance: previousBalance,
+                    newBalance: newBalance
+                });
+                
+                // Notify user
+                try {
+                    const { bot } = require('./bot-core');
+                    await bot.telegram.sendMessage(
+                        userId,
+                        `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+                        `Amount: ₦${parseFloat(amount).toLocaleString()}\n` +
+                        `Reference: ${transactionRef || 'TEST'}\n\n` +
+                        `New Balance: ₦${newBalance.toLocaleString()}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                    console.log(`✅ User notified`);
+                } catch (err) {
+                    console.log(`⚠️ Could not notify user: ${err.message}`);
                 }
             } else {
-                console.log(`❌ Could not extract user ID from merchant reference`);
+                console.log(`❌ User ${userId} not found in database`);
             }
+        } else {
+            console.log(`❌ Could not extract user ID from payload`);
+            console.log(`   Full payload:`, JSON.stringify(payload));
         }
         
         res.status(200).json({ status: 'success' });
