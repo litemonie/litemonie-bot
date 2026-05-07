@@ -1,5 +1,5 @@
 // ==================== billstack-webhook.js ====================
-// FINAL WORKING VERSION
+// FINAL WORKING VERSION - Replace your entire file with this
 // =============================================================
 
 const express = require('express');
@@ -12,26 +12,23 @@ router.post('/', async (req, res) => {
     
     try {
         const payload = req.body;
-        console.log('📦 Processing payment...');
         
-        // Extract data from payload
+        // Extract data from payload (handles both nested and direct formats)
         let amount = null;
         let merchantReference = null;
         let transactionRef = null;
         let customerEmail = null;
         
-        // Handle different payload structures
         if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data) {
             amount = payload.data.amount;
             merchantReference = payload.data.merchant_reference;
             transactionRef = payload.data.transaction_ref;
             customerEmail = payload.data.customer?.email;
         } else {
-            // Direct data structure (for test)
-            amount = payload.amount || payload.data?.amount;
-            merchantReference = payload.merchant_reference || payload.data?.merchant_reference;
-            transactionRef = payload.transaction_ref || payload.data?.transaction_ref;
-            customerEmail = payload.customer?.email || payload.data?.customer?.email;
+            amount = payload.amount;
+            merchantReference = payload.merchant_reference;
+            transactionRef = payload.transaction_ref;
+            customerEmail = payload.customer?.email;
         }
         
         console.log(`💰 Amount: ₦${amount}`);
@@ -44,7 +41,7 @@ router.post('/', async (req, res) => {
             const match = merchantReference.match(/VTU-(\d+)-/);
             if (match && match[1]) {
                 userId = match[1];
-                console.log(`✅ Extracted User ID: ${userId}`);
+                console.log(`✅ Extracted User ID from merchant reference: ${userId}`);
             }
         }
         
@@ -74,7 +71,7 @@ router.post('/', async (req, res) => {
                 setUsers(users);
                 await saveAllData();
                 
-                console.log(`✅✅✅ CREDITED: ₦${amount} to user ${userId}`);
+                console.log(`✅✅✅ SUCCESS: Credited ₦${amount} to user ${userId}`);
                 console.log(`   Balance: ₦${previousBalance} → ₦${newBalance}`);
                 
                 // Record transaction
@@ -83,10 +80,11 @@ router.post('/', async (req, res) => {
                     amount: parseFloat(amount),
                     status: 'completed',
                     description: 'Billstack deposit',
-                    reference: transactionRef || 'WEBHOOK_TEST',
+                    reference: transactionRef || 'WEBHOOK',
                     previousBalance: previousBalance,
                     newBalance: newBalance
                 });
+                console.log(`✅ Transaction recorded`);
                 
                 // Notify user
                 try {
@@ -95,11 +93,11 @@ router.post('/', async (req, res) => {
                         userId,
                         `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
                         `Amount: ₦${parseFloat(amount).toLocaleString()}\n` +
-                        `Reference: ${transactionRef || 'TEST'}\n\n` +
+                        `Reference: ${transactionRef}\n\n` +
                         `New Balance: ₦${newBalance.toLocaleString()}`,
                         { parse_mode: 'Markdown' }
                     );
-                    console.log(`✅ User notified`);
+                    console.log(`✅ User notified on Telegram`);
                 } catch (err) {
                     console.log(`⚠️ Could not notify user: ${err.message}`);
                 }
@@ -107,8 +105,7 @@ router.post('/', async (req, res) => {
                 console.log(`❌ User ${userId} not found in database`);
             }
         } else {
-            console.log(`❌ Could not extract user ID from payload`);
-            console.log(`   Full payload:`, JSON.stringify(payload));
+            console.log(`❌ Could not extract user ID from merchant reference`);
         }
         
         res.status(200).json({ status: 'success' });
