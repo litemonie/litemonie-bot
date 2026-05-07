@@ -55,7 +55,6 @@ app.get('/bot-info', async (req, res) => {
   }
 });
 
-
 // Debug endpoint - check user by ID
 app.get('/debug/user/:id', (req, res) => {
   const { getUsers } = require('./database');
@@ -92,7 +91,6 @@ app.post('/debug/update-email/:id/:email', (req, res) => {
 // Webhook endpoint for Telegram (if using webhooks)
 app.post('/webhook', (req, res) => {
   try {
-    // Your webhook handling logic here
     res.status(200).send('OK');
   } catch (error) {
     console.error('Webhook error:', error);
@@ -100,56 +98,103 @@ app.post('/webhook', (req, res) => {
   }
 });
 
-// ========== BILLSTACK WEBHOOK ENDPOINT ==========
+// ========== BILLSTACK WEBHOOK ENDPOINT - CORRECTED ==========
 app.post('/billstack-webhook', async (req, res) => {
   console.log('💰 Billstack webhook received:', new Date().toISOString());
   console.log('📦 Body:', JSON.stringify(req.body));
   
   try {
-    const { transactionReference, amount, customerReference, status } = req.body;
+    const payload = req.body;
     
-    if (status === 'success' && customerReference) {
-      const { getUsers, setUsers, saveAllData, recordTransaction } = require('./database');
-      const users = getUsers();
+    // Check if this is a payment notification (Billstack actual format)
+    if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data?.type === 'RESERVED_ACCOUNT_TRANSACTION') {
+      const paymentData = payload.data;
+      const amount = parseFloat(paymentData.amount);
+      const transactionRef = paymentData.transaction_ref || paymentData.reference;
+      const merchantReference = paymentData.merchant_reference;
+      const customerEmail = paymentData.customer?.email;
       
-      if (users[customerReference]) {
-        const previousBalance = users[customerReference].wallet || 0;
-        users[customerReference].wallet = previousBalance + parseFloat(amount);
-        setUsers(users);
-        await saveAllData();
+      console.log(`💰 Amount: ₦${amount}`);
+      console.log(`📝 Merchant Reference: ${merchantReference}`);
+      console.log(`📧 Customer Email: ${customerEmail}`);
+      
+      // Extract user ID from merchant_reference (VTU-7197363326-xxx)
+      let userId = null;
+      if (merchantReference) {
+        const match = merchantReference.match(/VTU-(\d+)-/);
+        if (match && match[1]) {
+          userId = match[1];
+          console.log(`✅ Extracted User ID from merchant reference: ${userId}`);
+        }
+      }
+      
+      // If not found by merchant ref, try by email
+      if (!userId && customerEmail) {
+        const { getUsers } = require('./database');
+        const users = getUsers();
+        for (const [id, user] of Object.entries(users)) {
+          if (user.email === customerEmail) {
+            userId = id;
+            console.log(`✅ Found User ID by email: ${userId}`);
+            break;
+          }
+        }
+      }
+      
+      if (userId) {
+        const { getUsers, setUsers, saveAllData, recordTransaction } = require('./database');
+        const users = getUsers();
+        const user = users[userId];
         
-        await recordTransaction(customerReference, {
-          type: 'deposit',
-          amount: parseFloat(amount),
-          status: 'completed',
-          description: 'Billstack deposit',
-          reference: transactionReference,
-          previousBalance: previousBalance,
-          newBalance: users[customerReference].wallet
-        });
-        
-        console.log(`✅ Credited ₦${amount} to user ${customerReference}`);
-        
-        // Notify user on Telegram
-        try {
-          const { bot } = require('./bot-core');
-          await bot.telegram.sendMessage(
-            customerReference,
-            `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
-            `Amount: ₦${parseFloat(amount).toLocaleString()}\n` +
-            `Reference: ${transactionReference}\n\n` +
-            `New Balance: ₦${users[customerReference].wallet.toLocaleString()}`,
-            { parse_mode: 'Markdown' }
-          );
-        } catch (notifyErr) {
-          console.log('Could not notify user:', customerReference);
+        if (user) {
+          const previousBalance = user.wallet || 0;
+          const newBalance = previousBalance + amount;
+          
+          user.wallet = newBalance;
+          users[userId] = user;
+          setUsers(users);
+          await saveAllData();
+          
+          console.log(`✅✅✅ SUCCESS: Credited ₦${amount} to user ${userId}`);
+          console.log(`   Balance: ₦${previousBalance} → ₦${newBalance}`);
+          
+          await recordTransaction(userId, {
+            type: 'deposit',
+            amount: amount,
+            status: 'completed',
+            description: 'Billstack deposit',
+            reference: transactionRef,
+            previousBalance: previousBalance,
+            newBalance: newBalance
+          });
+          
+          // Notify user on Telegram
+          try {
+            const { bot } = require('./bot-core');
+            await bot.telegram.sendMessage(
+              userId,
+              `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+              `Amount: ₦${amount.toLocaleString()}\n` +
+              `Reference: ${transactionRef}\n\n` +
+              `New Balance: ₦${newBalance.toLocaleString()}`,
+              { parse_mode: 'Markdown' }
+            );
+            console.log(`✅ User notified on Telegram`);
+          } catch (notifyErr) {
+            console.log('Could not notify user');
+          }
+        } else {
+          console.log(`❌ User ${userId} not found in database`);
         }
       } else {
-        console.log(`⚠️ User ${customerReference} not found`);
+        console.log(`❌ Could not extract user ID from merchant reference`);
       }
+    } else {
+      console.log('📋 Webhook received - not a deposit notification');
     }
     
     res.status(200).json({ status: 'success' });
+    
   } catch (error) {
     console.error('❌ Billstack error:', error);
     res.status(200).json({ status: 'received' });
@@ -239,7 +284,7 @@ async function startBot() {
       }
       
       // Launch bot in webhook mode
-      await launchBot(true); // Pass true for webhook mode
+      await launchBot(true);
     } else {
       // In development, use polling
       console.log('\n📱 Configuring for development with polling...');
@@ -251,7 +296,6 @@ async function startBot() {
   } catch (error) {
     console.error('❌ Failed to start bot:', error);
     
-    // Check for 404 error (invalid token)
     if (error.code === 404 || (error.response && error.response.error_code === 404)) {
       console.error('\n🔴 CRITICAL: Bot token is invalid or bot does not exist!');
       console.error('Please check:');
