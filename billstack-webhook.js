@@ -1,9 +1,9 @@
 // ==================== billstack-webhook.js ====================
-// Separate webhook handler for Billstack payments - FIXED
+// Separate webhook handler for Billstack payments - COMPLETE FIX
 // =============================================================
 
 const express = require('express');
-const { getUsers, setUsers, saveAllData, recordTransaction } = require('./database');
+const { getUsers, setUsers, saveAllData, recordTransaction, getVirtualAccounts, setVirtualAccounts } = require('./database');
 
 const router = express.Router();
 
@@ -13,7 +13,6 @@ router.post('/', async (req, res) => {
     console.log('📦 Body:', JSON.stringify(req.body));
     
     try {
-        // BILLSTACK ACTUAL PAYLOAD STRUCTURE
         const payload = req.body;
         
         // Check if this is a payment notification
@@ -25,9 +24,9 @@ router.post('/', async (req, res) => {
             const customerEmail = paymentData.customer?.email;
             const merchantReference = paymentData.merchant_reference;
             
-            console.log(`💰 Deposit: ₦${amount} | Account: ${accountNumber}`);
+            console.log(`💰 Deposit: ₦${amount}`);
+            console.log(`🏦 Account: ${accountNumber}`);
             console.log(`📧 Email: ${customerEmail}`);
-            console.log(`🔖 Ref: ${transactionRef}`);
             console.log(`📝 Merchant Ref: ${merchantReference}`);
             
             let userId = null;
@@ -40,7 +39,11 @@ router.post('/', async (req, res) => {
                 if (match && match[1]) {
                     userId = match[1];
                     user = users[userId];
-                    console.log(`✅ User found by merchant reference: ${userId}`);
+                    if (user) {
+                        console.log(`✅✅✅ User found by merchant reference: ${userId}`);
+                    } else {
+                        console.log(`⚠️ User ID ${userId} extracted but not found in database`);
+                    }
                 }
             }
             
@@ -56,11 +59,9 @@ router.post('/', async (req, res) => {
                 }
             }
             
-            // METHOD 3: Find by virtual account number (if we have that mapping)
+            // METHOD 3: Find by virtual account number
             if (!user && accountNumber) {
-                // Check virtual accounts file for mapping
                 try {
-                    const { getVirtualAccounts } = require('./database');
                     const virtualAccounts = getVirtualAccounts();
                     for (const [id, va] of Object.entries(virtualAccounts)) {
                         if (va.account_number === accountNumber && va.user_id) {
@@ -85,24 +86,28 @@ router.post('/', async (req, res) => {
                 setUsers(users);
                 await saveAllData();
                 
-                console.log(`✅✅✅ SUCCESS: Credited ₦${amount} to user ${userId}`);
+                console.log(`✅✅✅✅✅ SUCCESS: Credited ₦${amount} to user ${userId} ✅✅✅✅✅`);
                 console.log(`   Balance: ₦${previousBalance} → ₦${newBalance}`);
                 
                 // Record transaction
-                await recordTransaction(userId, {
-                    type: 'deposit',
-                    amount: amount,
-                    status: 'completed',
-                    description: 'Billstack deposit',
-                    reference: transactionRef,
-                    previousBalance: previousBalance,
-                    newBalance: newBalance,
-                    metadata: {
-                        account_number: accountNumber,
-                        customer_email: customerEmail
-                    }
-                });
-                console.log(`✅ Transaction recorded`);
+                try {
+                    await recordTransaction(userId, {
+                        type: 'deposit',
+                        amount: amount,
+                        status: 'completed',
+                        description: 'Billstack deposit',
+                        reference: transactionRef,
+                        previousBalance: previousBalance,
+                        newBalance: newBalance,
+                        metadata: {
+                            account_number: accountNumber,
+                            customer_email: customerEmail
+                        }
+                    });
+                    console.log(`✅ Transaction recorded`);
+                } catch (err) {
+                    console.warn('Transaction record error:', err.message);
+                }
                 
                 // Notify user on Telegram
                 try {
@@ -115,19 +120,20 @@ router.post('/', async (req, res) => {
                         `New Balance: ₦${newBalance.toLocaleString()}`,
                         { parse_mode: 'Markdown' }
                     );
-                    console.log(`✅ User notified`);
+                    console.log(`✅ User ${userId} notified on Telegram`);
                 } catch (notifyErr) {
-                    console.log('Could not notify user');
+                    console.log('Could not notify user:', notifyErr.message);
                 }
             } else {
-                console.log(`❌❌❌ USER NOT FOUND!`);
+                console.log(`❌❌❌❌❌ CRITICAL: USER NOT FOUND! ❌❌❌❌❌`);
                 console.log(`   Account: ${accountNumber}`);
                 console.log(`   Email: ${customerEmail}`);
                 console.log(`   Merchant Ref: ${merchantReference}`);
-                console.log(`   Extracted User ID from merchant ref: ${merchantReference?.match(/VTU-(\d+)-/)?.[1]}`);
+                console.log(`   Extracted User ID: ${merchantReference?.match(/VTU-(\d+)-/)?.[1] || 'N/A'}`);
+                console.log(`   Available Users in DB: ${Object.keys(users).join(', ')}`);
             }
         } else {
-            console.log('📋 Webhook received but not a deposit notification');
+            console.log('📋 Webhook received - not a deposit notification');
         }
         
         res.status(200).json({ status: 'success' });
@@ -138,7 +144,7 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Test endpoint (GET) - DELETE after testing
+// Test endpoint (GET)
 router.get('/', (req, res) => {
     res.json({ 
         status: 'Billstack webhook is ready', 
