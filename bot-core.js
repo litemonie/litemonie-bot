@@ -222,19 +222,19 @@ function setupExpressServer(bot) {
     }
   });
 
-   // ========== DEPOSIT WEBHOOK ==========
-  try {
-    const usersForDeposit = { ...require('./database').getUsers(), ...userMethods };
-    depositFunds.setupDepositHandlers(bot, usersForDeposit, virtualAccounts);
-    console.log('✅ Deposit handlers setup');
-  } catch (error) {
-    console.error('❌ Deposit handlers failed:', error);
-  }
-  
-     // ========== BILLSTACK WEBHOOK ENDPOINT ==========
+  // ========== BILLSTACK WEBHOOK ENDPOINT ==========
   const billstackWebhook = require('./billstack-webhook');
   app.use('/billstack-webhook', billstackWebhook);
+  console.log('✅ Billstack webhook handler active');
 
+  // ========== DEPOSIT WEBHOOK (DISABLED - Using billstack-webhook.js) ==========
+  // try {
+  //   const usersForDeposit = { ...require('./database').getUsers(), ...userMethods };
+  //   depositFunds.setupDepositHandlers(bot, usersForDeposit, virtualAccounts);
+  //   console.log('✅ Deposit handlers setup');
+  // } catch (error) {
+  //   console.error('❌ Deposit handlers failed:', error);
+  // }
   
   // ========== MINI APP API ENDPOINTS ==========
   app.get('/api/device-data', async (req, res) => {
