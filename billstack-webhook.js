@@ -1,5 +1,5 @@
 // ==================== billstack-webhook.js ====================
-// SIMPLIFIED WORKING VERSION - Uses both merchant_reference and email
+// SIMPLE WORKING VERSION - Replace your old file with this
 // =============================================================
 
 const express = require('express');
@@ -12,7 +12,6 @@ router.post('/', async (req, res) => {
     
     try {
         const payload = req.body;
-        console.log('📦 Payload received');
         
         // Check if this is a payment notification
         if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data?.type === 'RESERVED_ACCOUNT_TRANSACTION') {
@@ -20,80 +19,67 @@ router.post('/', async (req, res) => {
             const amount = parseFloat(paymentData.amount);
             const transactionRef = paymentData.transaction_ref || paymentData.reference;
             const merchantReference = paymentData.merchant_reference;
-            const customerEmail = paymentData.customer?.email;
             
-            console.log(`💰 Amount: ₦${amount}`);
-            console.log(`📧 Customer Email: ${customerEmail}`);
-            console.log(`📝 Merchant Ref: ${merchantReference}`);
+            console.log(`💰 Deposit Amount: ₦${amount}`);
+            console.log(`📝 Merchant Reference: ${merchantReference}`);
             
-            // Get all users
-            const users = getUsers();
+            // Extract User ID from merchant_reference (VTU-7197363326-xxx)
             let userId = null;
-            let user = null;
-            
-            // METHOD 1: Extract from merchant_reference (BEST)
             if (merchantReference) {
                 const match = merchantReference.match(/VTU-(\d+)-/);
                 if (match && match[1]) {
                     userId = match[1];
-                    user = users[userId];
-                    console.log(`🔍 Found by merchant reference: ${userId}`);
+                    console.log(`✅ Extracted User ID: ${userId}`);
                 }
             }
             
-            // METHOD 2: Find by email (BACKUP)
-            if (!user && customerEmail) {
-                for (const [id, userData] of Object.entries(users)) {
-                    if (userData.email === customerEmail) {
-                        userId = id;
-                        user = userData;
-                        console.log(`🔍 Found by email: ${userId}`);
-                        break;
+            if (userId) {
+                const users = getUsers();
+                const user = users[userId];
+                
+                if (user) {
+                    const previousBalance = user.wallet || 0;
+                    const newBalance = previousBalance + amount;
+                    
+                    user.wallet = newBalance;
+                    users[userId] = user;
+                    setUsers(users);
+                    await saveAllData();
+                    
+                    console.log(`✅✅✅ CREDITED: ₦${amount} to user ${userId}`);
+                    console.log(`   Old Balance: ₦${previousBalance} → New Balance: ₦${newBalance}`);
+                    
+                    // Record transaction
+                    await recordTransaction(userId, {
+                        type: 'deposit',
+                        amount: amount,
+                        status: 'completed',
+                        description: 'Billstack deposit',
+                        reference: transactionRef,
+                        previousBalance: previousBalance,
+                        newBalance: newBalance
+                    });
+                    
+                    // Notify user
+                    try {
+                        const { bot } = require('./bot-core');
+                        await bot.telegram.sendMessage(
+                            userId,
+                            `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+                            `Amount: ₦${amount.toLocaleString()}\n` +
+                            `Reference: ${transactionRef}\n\n` +
+                            `New Balance: ₦${newBalance.toLocaleString()}`,
+                            { parse_mode: 'Markdown' }
+                        );
+                        console.log(`✅ User notified on Telegram`);
+                    } catch (notifyErr) {
+                        console.log('Could not notify user');
                     }
-                }
-            }
-            
-            // CREDIT THE USER
-            if (user && userId) {
-                const oldBalance = user.wallet || 0;
-                const newBalance = oldBalance + amount;
-                
-                user.wallet = newBalance;
-                users[userId] = user;
-                setUsers(users);
-                await saveAllData();
-                
-                console.log(`✅✅✅ CREDITED: ₦${amount} to user ${userId}`);
-                console.log(`   Balance: ₦${oldBalance} → ₦${newBalance}`);
-                
-                // Record transaction
-                await recordTransaction(userId, {
-                    type: 'deposit',
-                    amount: amount,
-                    status: 'completed',
-                    description: 'Billstack deposit',
-                    reference: transactionRef,
-                    previousBalance: oldBalance,
-                    newBalance: newBalance
-                });
-                
-                // Send Telegram notification
-                try {
-                    const { bot } = require('./bot-core');
-                    await bot.telegram.sendMessage(
-                        userId,
-                        `💰 *DEPOSIT SUCCESSFUL!*\n\nAmount: ₦${amount.toLocaleString()}\nReference: ${transactionRef}\n\nNew Balance: ₦${newBalance.toLocaleString()}`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    console.log(`📱 User notified on Telegram`);
-                } catch (err) {
-                    console.log(`⚠️ Could not notify user: ${err.message}`);
+                } else {
+                    console.log(`❌ User ${userId} not found in database`);
                 }
             } else {
-                console.log(`❌❌❌ USER NOT FOUND!`);
-                console.log(`   Email in webhook: ${customerEmail}`);
-                console.log(`   Email in DB for 7197363326: ${users['7197363326']?.email}`);
-                console.log(`   Available users: ${Object.keys(users).join(', ')}`);
+                console.log(`❌ Could not extract user ID from merchant reference`);
             }
         }
         
@@ -106,7 +92,11 @@ router.post('/', async (req, res) => {
 });
 
 router.get('/', (req, res) => {
-    res.json({ status: 'Billstack webhook is ready', method: 'POST only' });
+    res.json({ 
+        status: 'Billstack webhook is ready', 
+        method: 'POST only',
+        info: 'Send POST requests to this endpoint for payment notifications'
+    });
 });
 
 module.exports = router;
