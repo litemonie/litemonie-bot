@@ -98,7 +98,7 @@ app.post('/webhook', (req, res) => {
   }
 });
 
-// ========== BILLSTACK WEBHOOK ENDPOINT - CORRECTED ==========
+// ========== BILLSTACK WEBHOOK ENDPOINT ==========
 app.post('/billstack-webhook', async (req, res) => {
   console.log('💰 Billstack webhook received:', new Date().toISOString());
   console.log('📦 Body:', JSON.stringify(req.body));
@@ -168,20 +168,24 @@ app.post('/billstack-webhook', async (req, res) => {
             newBalance: newBalance
           });
           
-          // Notify user on Telegram
+          // Notify user on Telegram - FIXED VERSION
           try {
             const { bot } = require('./bot-core');
-            await bot.telegram.sendMessage(
-              userId,
-              `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
-              `Amount: ₦${amount.toLocaleString()}\n` +
-              `Reference: ${transactionRef}\n\n` +
-              `New Balance: ₦${newBalance.toLocaleString()}`,
-              { parse_mode: 'Markdown' }
-            );
-            console.log(`✅ User notified on Telegram`);
+            if (bot && bot.telegram) {
+              await bot.telegram.sendMessage(
+                userId,
+                `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+                `Amount: ₦${amount.toLocaleString()}\n` +
+                `Reference: ${transactionRef}\n\n` +
+                `New Balance: ₦${newBalance.toLocaleString()}`,
+                { parse_mode: 'Markdown' }
+              );
+              console.log(`✅ User notified on Telegram`);
+            } else {
+              console.log('⚠️ Bot not ready for notification');
+            }
           } catch (notifyErr) {
-            console.log('Could not notify user');
+            console.log('Could not notify user (this is normal for test webhooks)');
           }
         } else {
           console.log(`❌ User ${userId} not found in database`);
