@@ -1,9 +1,113 @@
 // ==================== DATABASE.JS ====================
-// Persistent storage operations with transaction sync
+// Persistent storage operations with transaction sync & Auto-Backup
 // ====================================================
 
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
+
+// ==================== BACKUP SYSTEM ====================
+const BACKUP_DIR = path.join(__dirname, 'backups');
+
+// Ensure backup directory exists
+if (!fsSync.existsSync(BACKUP_DIR)) {
+    fsSync.mkdirSync(BACKUP_DIR, { recursive: true });
+    console.log('📁 Backup directory created');
+}
+
+// Create timestamped backup
+function createTimestampedBackup() {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestampedDir = path.join(BACKUP_DIR, `backup_${timestamp}`);
+    
+    if (!fsSync.existsSync(timestampedDir)) {
+        fsSync.mkdirSync(timestampedDir, { recursive: true });
+    }
+    
+    return timestampedDir;
+}
+
+// Save backup of current data
+async function saveBackup(users, virtualAccounts, transactions) {
+    try {
+        const timestampedDir = createTimestampedBackup();
+        
+        // Save to timestamped backup
+        await fs.writeFile(
+            path.join(timestampedDir, 'users.json'),
+            JSON.stringify(users, null, 2)
+        );
+        await fs.writeFile(
+            path.join(timestampedDir, 'virtual_accounts.json'),
+            JSON.stringify(virtualAccounts, null, 2)
+        );
+        await fs.writeFile(
+            path.join(timestampedDir, 'transactions.json'),
+            JSON.stringify(transactions, null, 2)
+        );
+        
+        // Also save to main backup files (overwrite)
+        await fs.writeFile(
+            path.join(BACKUP_DIR, 'users_backup.json'),
+            JSON.stringify(users, null, 2)
+        );
+        await fs.writeFile(
+            path.join(BACKUP_DIR, 'virtual_accounts_backup.json'),
+            JSON.stringify(virtualAccounts, null, 2)
+        );
+        await fs.writeFile(
+            path.join(BACKUP_DIR, 'transactions_backup.json'),
+            JSON.stringify(transactions, null, 2)
+        );
+        
+        console.log(`💾 Backup saved to: ${path.basename(timestampedDir)}`);
+        return true;
+    } catch (error) {
+        console.error('❌ Backup failed:', error);
+        return false;
+    }
+}
+
+// Load from backup
+async function loadFromBackup() {
+    try {
+        const usersBackup = path.join(BACKUP_DIR, 'users_backup.json');
+        const vaBackup = path.join(BACKUP_DIR, 'virtual_accounts_backup.json');
+        const txBackup = path.join(BACKUP_DIR, 'transactions_backup.json');
+        
+        if (fsSync.existsSync(usersBackup)) {
+            const users = JSON.parse(await fs.readFile(usersBackup, 'utf8'));
+            const virtualAccounts = fsSync.existsSync(vaBackup) 
+                ? JSON.parse(await fs.readFile(vaBackup, 'utf8'))
+                : {};
+            const transactions = fsSync.existsSync(txBackup)
+                ? JSON.parse(await fs.readFile(txBackup, 'utf8'))
+                : {};
+            
+            console.log(`📂 Loaded from backup: ${Object.keys(users).length} users`);
+            return { users, virtualAccounts, transactions };
+        } else {
+            console.log('⚠️ No backup files found');
+            return null;
+        }
+    } catch (error) {
+        console.error('❌ Failed to load backup:', error);
+        return null;
+    }
+}
+
+// Get list of available backups
+function getAvailableBackups() {
+    try {
+        const backups = fsSync.readdirSync(BACKUP_DIR)
+            .filter(dir => dir.startsWith('backup_'))
+            .sort()
+            .reverse();
+        return backups;
+    } catch (error) {
+        return [];
+    }
+}
 
 // ==================== PATHS ====================
 const dataDir = path.join(__dirname, 'data');
@@ -44,6 +148,7 @@ async function initStorage() {
     await fs.mkdir(dataDir, { recursive: true });
     await fs.mkdir(reportsDir, { recursive: true });
     await fs.mkdir(exportsDir, { recursive: true });
+    await fs.mkdir(BACKUP_DIR, { recursive: true });
     
     await ensureFile(usersFile, {});
     await ensureFile(transactionsFile, {});
@@ -91,6 +196,9 @@ async function saveAllData() {
     await fs.writeFile(systemTransactionsFile, JSON.stringify(systemTransactions, null, 2));
     await fs.writeFile(analyticsFile, JSON.stringify(analytics, null, 2));
     await fs.writeFile(apiResponsesFile, JSON.stringify(apiResponses, null, 2));
+    
+    // AUTO-BACKUP: Save backup of current data
+    await saveBackup(users, virtualAccountsData, transactions);
     
     console.log('💾 All data saved successfully');
   } catch (error) {
@@ -355,7 +463,7 @@ function getTransactionStats() {
   };
 }
 
-// ==================== GETTERS/SETTERS (Keep original) ====================
+// ==================== GETTERS/SETTERS ====================
 function getUsers() { return users; }
 function setUsers(newUsers) { users = newUsers; }
 
@@ -397,13 +505,18 @@ module.exports = {
   getAnalytics, setAnalytics,
   getApiResponses, setApiResponses,
   
-  // NEW: Enhanced transaction functions
+  // Transaction functions
   recordTransaction,
   recordTransactions,
   syncTransactionsToSystem,
   getUserTransactions,
   getFilteredSystemTransactions,
   getTransactionStats,
+  
+  // Backup functions
+  saveBackup,
+  loadFromBackup,
+  getAvailableBackups,
   
   // Operations
   initStorage,
