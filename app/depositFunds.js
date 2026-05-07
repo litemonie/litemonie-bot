@@ -30,9 +30,7 @@ const {
   getTransactions,
   setUsers,
   saveAllData,
-  recordTransaction,
-  loadFromBackup,
-  getAvailableBackups
+  recordTransaction
 } = require('../database');
 
 /* =====================================================
@@ -500,7 +498,6 @@ async function handleDeposit(ctx, users, virtualAccounts) {
           ...Markup.inlineKeyboard([
             [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
             [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
-            [Markup.button.callback('💾 Restore from Backup', 'restore_from_backup')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
           ])
@@ -587,7 +584,6 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
           ...Markup.inlineKeyboard([
             [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
             [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
-            [Markup.button.callback('💾 Restore from Backup', 'restore_from_backup')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
           ])
@@ -947,7 +943,7 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
   }
 }
 
-// ========== NEW: RETRIEVE EXISTING ACCOUNT HANDLER ==========
+// ========== RETRIEVE EXISTING ACCOUNT HANDLER ==========
 async function handleRetrieveAccount(ctx, users, virtualAccounts, bot) {
   console.log('🟢 CALLBACK TRIGGERED: retrieve_account');
   
@@ -986,7 +982,7 @@ async function handleRetrieveAccount(ctx, users, virtualAccounts, bot) {
       let retrievedAccount = null;
       const reference = generateReference(user.telegramId);
       
-      // Method 1: Try to get by reference
+      // Try to get by reference
       try {
         const response = await billstackClient.get(`/v2/thirdparty/virtual-account/${reference}`);
         if (response.data && response.data.status && response.data.data) {
@@ -996,41 +992,6 @@ async function handleRetrieveAccount(ctx, users, virtualAccounts, bot) {
         }
       } catch (refError) {
         console.log('Reference lookup failed:', refError.response?.status);
-      }
-      
-      // Method 2: Try to list accounts by email
-      if (!retrievedAccount) {
-        try {
-          const listResponse = await billstackClient.get('/v2/thirdparty/virtual-accounts', {
-            params: { email: user.email, limit: 10 }
-          });
-          if (listResponse.data && listResponse.data.status && listResponse.data.data) {
-            const accounts = listResponse.data.data;
-            if (accounts && accounts.length > 0) {
-              retrievedAccount = accounts[0];
-              console.log('✅ Account retrieved by email list');
-            }
-          }
-        } catch (listError) {
-          console.log('List lookup failed:', listError.response?.status);
-        }
-      }
-      
-      // Method 3: Try to search by customer reference
-      if (!retrievedAccount) {
-        try {
-          const searchResponse = await billstackClient.post('/v2/thirdparty/virtual-account/lookup', {
-            email: user.email,
-            reference: reference
-          });
-          if (searchResponse.data && searchResponse.data.status && searchResponse.data.data) {
-            const accountData = searchResponse.data.data;
-            retrievedAccount = accountData.account?.[0] || accountData;
-            console.log('✅ Account retrieved by lookup endpoint');
-          }
-        } catch (lookupError) {
-          console.log('Lookup failed:', lookupError.response?.status);
-        }
       }
       
       if (retrievedAccount) {
@@ -1111,118 +1072,6 @@ async function handleRetrieveAccount(ctx, users, virtualAccounts, bot) {
     
   } catch (error) {
     console.error('❌ Retrieve account error:', error);
-    await ctx.answerCbQuery('❌ Error');
-  }
-}
-
-// ========== NEW: RESTORE FROM BACKUP HANDLER ==========
-async function handleRestoreFromBackup(ctx, users, virtualAccounts, bot) {
-  console.log('🟢 CALLBACK TRIGGERED: restore_from_backup');
-  
-  try {
-    const { Markup } = require('telegraf');
-    const telegramId = ctx.from.id.toString();
-    
-    await ctx.answerCbQuery('💾 Searching backup...');
-    
-    await ctx.editMessageText(
-      `💾 *Restoring from Backup...*\n\n` +
-      `Searching for your account in our backup system...`,
-      { parse_mode: 'Markdown' }
-    );
-    
-    const backupData = await loadFromBackup();
-    
-    if (backupData && backupData.users[telegramId]) {
-      const userData = backupData.users[telegramId];
-      let virtualAccount = null;
-      
-      if (backupData.virtualAccounts) {
-        virtualAccount = Object.values(backupData.virtualAccounts).find(va => va.user_id === telegramId);
-      }
-      
-      // Restore user data to current database
-      const currentUsers = getUsers();
-      currentUsers[telegramId] = {
-        ...currentUsers[telegramId],
-        wallet: userData.wallet || 0,
-        email: userData.email,
-        phone: userData.phone,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        pin: userData.pin,
-        kycStatus: userData.kycStatus || 'pending'
-      };
-      setUsers(currentUsers);
-      
-      // Restore virtual account if exists in backup
-      if (virtualAccount && !(await virtualAccounts.findByUserId(telegramId))) {
-        await virtualAccounts.create({
-          user_id: telegramId,
-          account_number: virtualAccount.account_number,
-          bank_name: virtualAccount.bank_name,
-          account_name: virtualAccount.account_name,
-          bank_code: virtualAccount.bank_code,
-          reference: virtualAccount.reference,
-          provider: virtualAccount.provider,
-          is_active: true
-        });
-      }
-      
-      await saveAllData();
-      
-      await ctx.editMessageText(
-        `✅ *Account Restored from Backup!*\n\n` +
-        `💰 *Balance:* ₦${(userData.wallet || 0).toLocaleString()}\n` +
-        `📧 *Email:* ${userData.email || 'Not set'}\n` +
-        `📱 *Phone:* ${userData.phone || 'Not set'}\n` +
-        `🔐 *PIN:* ${userData.pin ? '✅ Set' : '❌ Not set'}\n\n` +
-        `${virtualAccount ? `🏦 *Virtual Account:* ${virtualAccount.account_number}\n` : ''}\n` +
-        `Your account has been successfully restored from the last backup!`,
-        {
-          parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback('💰 Check Balance', 'check_balance')],
-            [Markup.button.callback('🏦 View Account', 'view_my_account')],
-            [Markup.button.callback('🏠 Home', 'start')]
-          ])
-        }
-      );
-    } else {
-      const availableBackups = getAvailableBackups();
-      
-      await ctx.editMessageText(
-        `❌ *No Backup Found*\n\n` +
-        `No backup data found for your account.\n\n` +
-        `📁 *Available Backups:* ${availableBackups.length || 'None'}\n\n` +
-        `💡 *What you can do:*\n` +
-        `1. Create a new virtual account\n` +
-        `2. Use manual deposit option\n` +
-        `3. Contact support @opuenekeke for assistance`,
-        {
-          parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
-            [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
-            [Markup.button.callback('📞 Contact Admin', 'contact_admin_direct')],
-            [Markup.button.callback('🏠 Home', 'start')]
-          ])
-        }
-      );
-    }
-  } catch (error) {
-    console.error('❌ Restore from backup error:', error);
-    await ctx.editMessageText(
-      `❌ *Restore Failed*\n\n` +
-      `Error: ${error.message}\n\n` +
-      `Please contact support @opuenekeke for assistance.`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('🏠 Home', 'start')]
-        ])
-      }
-    );
     await ctx.answerCbQuery('❌ Error');
   }
 }
@@ -1470,11 +1319,6 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
     return handleRetrieveAccount(ctx, users, virtualAccounts, bot);
   });
   
-  bot.action('restore_from_backup', (ctx) => {
-    console.log('🟢 restore_from_backup callback triggered');
-    return handleRestoreFromBackup(ctx, users, virtualAccounts, bot);
-  });
-  
   bot.action('cancel_deposit', (ctx) => {
     console.log('🟢 cancel_deposit callback triggered');
     return handleCancelDeposit(ctx);
@@ -1509,7 +1353,6 @@ module.exports = {
   handleCreateVirtualAccount,
   handleForceNewAccount,
   handleRetrieveAccount,
-  handleRestoreFromBackup,
   handleManualDeposit,
   handleCancelDeposit,
   handleChangeEmail,
