@@ -7,7 +7,7 @@ const { Telegraf } = require('telegraf');
 const express = require('express');
 const path = require('path');
 const { CONFIG } = require('./config');
-const { initStorage, loadData, setupAutoSave, saveAllData, recordTransaction } = require('./database');
+const { initStorage, loadData, setupAutoSave, saveAllData, recordTransaction, getUsers, setUsers } = require('./database');
 const { initUser, isAdmin, formatCurrency, escapeMarkdownV2 } = require('./utils');
 const { initializeDeviceHandler, getDeviceHandler, getDeviceCallbacks, getDeviceLockApp, getMiniAppCallbacks } = require('./device-system');
 const { systemTransactionManager, analyticsManager } = require('./transaction-system');
@@ -891,10 +891,34 @@ async function setupMenuHandlers(bot) {
     const user = await initUser(userId);
     
     if ((user.kycStatus || 'pending') !== 'approved') {
-      return ctx.reply('❌ KYC verification required', { parse_mode: 'MarkdownV2' });
+      return ctx.reply('❌ KYC verification required. Contact @opuenekeke to verify.', { parse_mode: 'Markdown' });
     }
     
-    await depositFunds.handleDeposit(ctx, { ...getUsers(), ...userMethods }, virtualAccounts);
+    try {
+      // Create a users object that has the findById method
+      const usersObject = {
+        findById: async (id) => {
+          const users = getUsers();
+          return users[id] || null;
+        },
+        update: async (id, data) => {
+          const users = getUsers();
+          if (users[id]) {
+            Object.assign(users[id], data);
+            setUsers(users);
+            await saveAllData();
+            return true;
+          }
+          return false;
+        },
+        getAll: () => getUsers()
+      };
+      
+      await depositFunds.handleDeposit(ctx, usersObject, virtualAccounts);
+    } catch (error) {
+      console.error('Deposit handler error:', error);
+      await ctx.reply(`❌ Error: ${error.message}\n\nPlease try again or contact support.`, { parse_mode: 'Markdown' });
+    }
   });
   
   bot.hears('📜 Transaction History', async (ctx) => {
