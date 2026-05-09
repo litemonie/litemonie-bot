@@ -496,7 +496,7 @@ async function handleDeposit(ctx, users, virtualAccounts) {
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
-            [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+            [Markup.button.callback('💳 Create Virtual Account', 'create_virtual_account')],
             [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
@@ -521,7 +521,7 @@ async function handleDeposit(ctx, users, virtualAccounts) {
 }
 
 /* =====================================================
-   3️⃣ TEXT MESSAGE HANDLER
+   3️⃣ TEXT MESSAGE HANDLER - FIXED
 ===================================================== */
 async function handleDepositText(ctx, text, users, virtualAccounts) {
   try {
@@ -538,18 +538,21 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
       const email = text.trim();
       
       if (!validateEmail(email)) {
-        await ctx.reply('❌ Invalid email. Please enter a valid email:');
+        await ctx.reply('❌ Invalid email. Please enter a valid email (e.g., name@example.com):');
         return true;
       }
       
       user.email = email;
       await users.update(telegramId, { email: email });
       
+      // Clear the email session and start phone collection
+      sessionManager.clearSession(telegramId);
       sessionManager.startSession(telegramId, 'collect_phone');
       
       await ctx.reply(
         `✅ Email saved: ${email}\n\n` +
-        `📱 Now enter your phone number:`,
+        `📱 *Phone Number Required*\n\n` +
+        `Please enter your phone number (e.g., 08012345678):`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -565,7 +568,7 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
       const phone = text.trim();
       
       if (!validatePhone(phone)) {
-        await ctx.reply('❌ Invalid phone. Please enter a valid Nigerian number:');
+        await ctx.reply('❌ Invalid phone number. Please enter a valid Nigerian number (e.g., 08012345678):');
         return true;
       }
       
@@ -578,11 +581,11 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
         `✅ *Registration Complete!*\n\n` +
         `📧 Email: ${user.email}\n` +
         `📱 Phone: ${user.phone}\n\n` +
-        `Now create your virtual account:`,
+        `Now click the button below to create your virtual account:`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
-            [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+            [Markup.button.callback('💳 Create Virtual Account', 'create_virtual_account')],
             [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
@@ -646,7 +649,8 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         `❌ Missing information.\n\n` +
         `Email: ${user.email ? '✅' : '❌'}\n` +
         `Phone: ${user.phone ? '✅' : '❌'}\n\n` +
-        `Please use /deposit again to set both.`
+        `Please use /deposit again to set both.`,
+        { parse_mode: 'Markdown' }
       );
       return;
     }
@@ -1076,6 +1080,129 @@ async function handleRetrieveAccount(ctx, users, virtualAccounts, bot) {
   }
 }
 
+// ========== RESTORE FROM BACKUP HANDLER ==========
+async function handleRestoreFromBackup(ctx, users, virtualAccounts, bot) {
+  console.log('🟢 CALLBACK TRIGGERED: restore_from_backup');
+  
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    
+    await ctx.answerCbQuery('💾 Searching backup...');
+    
+    await ctx.editMessageText(
+      `💾 *Restoring from Backup...*\n\n` +
+      `Searching for your account in our backup system...`,
+      { parse_mode: 'Markdown' }
+    );
+    
+    // Try to load from backup
+    let backupData = null;
+    try {
+      const { loadFromBackup } = require('../database');
+      backupData = await loadFromBackup();
+    } catch (backupError) {
+      console.log('Backup module not available, using local method');
+      // Fallback: try to read from backups folder
+      const fs = require('fs');
+      const path = require('path');
+      const backupPath = path.join(__dirname, '../backups/users_backup.json');
+      if (fs.existsSync(backupPath)) {
+        backupData = { users: JSON.parse(fs.readFileSync(backupPath, 'utf8')) };
+      }
+    }
+    
+    if (backupData && backupData.users && backupData.users[telegramId]) {
+      const userData = backupData.users[telegramId];
+      let virtualAccount = null;
+      
+      if (backupData.virtualAccounts) {
+        virtualAccount = Object.values(backupData.virtualAccounts).find(va => va.user_id === telegramId);
+      }
+      
+      // Restore user data to current database
+      const currentUsers = getUsers();
+      currentUsers[telegramId] = {
+        ...currentUsers[telegramId],
+        wallet: userData.wallet || 0,
+        email: userData.email,
+        phone: userData.phone,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        pin: userData.pin,
+        kycStatus: userData.kycStatus || 'pending'
+      };
+      setUsers(currentUsers);
+      
+      // Restore virtual account if exists in backup
+      if (virtualAccount && !(await virtualAccounts.findByUserId(telegramId))) {
+        await virtualAccounts.create({
+          user_id: telegramId,
+          account_number: virtualAccount.account_number,
+          bank_name: virtualAccount.bank_name,
+          account_name: virtualAccount.account_name,
+          bank_code: virtualAccount.bank_code,
+          reference: virtualAccount.reference,
+          provider: virtualAccount.provider,
+          is_active: true
+        });
+      }
+      
+      await saveAllData();
+      
+      await ctx.editMessageText(
+        `✅ *Account Restored from Backup!*\n\n` +
+        `💰 *Balance:* ₦${(userData.wallet || 0).toLocaleString()}\n` +
+        `📧 *Email:* ${userData.email || 'Not set'}\n` +
+        `📱 *Phone:* ${userData.phone || 'Not set'}\n` +
+        `🔐 *PIN:* ${userData.pin ? '✅ Set' : '❌ Not set'}\n\n` +
+        `${virtualAccount ? `🏦 *Virtual Account:* ${virtualAccount.account_number}\n` : ''}\n` +
+        `Your account has been successfully restored from the last backup!`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💰 Check Balance', 'check_balance')],
+            [Markup.button.callback('🏦 View Account', 'view_my_account')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+    } else {
+      await ctx.editMessageText(
+        `❌ *No Backup Found*\n\n` +
+        `No backup data found for your account.\n\n` +
+        `💡 *What you can do:*\n` +
+        `1. Create a new virtual account\n` +
+        `2. Use manual deposit option\n` +
+        `3. Contact support @opuenekeke for assistance`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+            [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+            [Markup.button.callback('📞 Contact Admin', 'contact_admin_direct')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+    }
+  } catch (error) {
+    console.error('❌ Restore from backup error:', error);
+    await ctx.editMessageText(
+      `❌ *Restore Failed*\n\n` +
+      `Error: ${error.message}\n\n` +
+      `Please contact support @opuenekeke for assistance.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🏠 Home', 'start')]
+        ])
+      }
+    );
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
 async function handleManualDeposit(ctx) {
   try {
     const { Markup } = require('telegraf');
@@ -1143,6 +1270,79 @@ async function handleChangeEmail(ctx, users) {
     
   } catch (error) {
     console.error('Change email error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
+async function handleCheckBalance(ctx, users, virtualAccounts) {
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    const user = await users.findById(telegramId);
+    
+    if (!user) {
+      await ctx.reply('❌ User not found. Please /start first.');
+      return;
+    }
+    
+    await ctx.editMessageText(
+      `💰 *Your Balance*\n\n` +
+      `💵 Available: ₦${(user.wallet || 0).toLocaleString()}\n\n` +
+      `Use /deposit to add funds.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🏦 Deposit', 'create_virtual_account')],
+          [Markup.button.callback('🏠 Home', 'start')]
+        ])
+      }
+    );
+  } catch (error) {
+    console.error('Check balance error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
+async function handleViewMyAccount(ctx, users, virtualAccounts) {
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    const user = await users.findById(telegramId);
+    const virtualAccount = await virtualAccounts.findByUserId(telegramId);
+    
+    if (!virtualAccount) {
+      await ctx.editMessageText(
+        `❌ *No Virtual Account Found*\n\n` +
+        `Click below to create one:`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💳 Create Account', 'create_virtual_account')],
+            [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+      return;
+    }
+    
+    await ctx.editMessageText(
+      `💰 *Your Virtual Account*\n\n` +
+      `🏦 *Bank:* ${virtualAccount.bank_name}\n` +
+      `🔢 *Account Number:* \`${virtualAccount.account_number}\`\n` +
+      `👤 *Name:* ${virtualAccount.account_name}\n` +
+      `💵 *Balance:* ₦${(user.wallet || 0).toLocaleString()}\n\n` +
+      `💡 Transfer to this account to deposit funds.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔄 Get New Account', 'force_new_account')],
+          [Markup.button.callback('🏠 Home', 'start')]
+        ])
+      }
+    );
+  } catch (error) {
+    console.error('View my account error:', error);
     await ctx.answerCbQuery('❌ Error');
   }
 }
@@ -1319,6 +1519,11 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
     return handleRetrieveAccount(ctx, users, virtualAccounts, bot);
   });
   
+  bot.action('restore_from_backup', (ctx) => {
+    console.log('🟢 restore_from_backup callback triggered');
+    return handleRestoreFromBackup(ctx, users, virtualAccounts, bot);
+  });
+  
   bot.action('cancel_deposit', (ctx) => {
     console.log('🟢 cancel_deposit callback triggered');
     return handleCancelDeposit(ctx);
@@ -1332,6 +1537,16 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
   bot.action('contact_admin_direct', (ctx) => {
     console.log('🟢 contact_admin_direct callback triggered');
     return handleContactAdminDirect(ctx);
+  });
+  
+  bot.action('check_balance', (ctx) => {
+    console.log('🟢 check_balance callback triggered');
+    return handleCheckBalance(ctx, users, virtualAccounts);
+  });
+  
+  bot.action('view_my_account', (ctx) => {
+    console.log('🟢 view_my_account callback triggered');
+    return handleViewMyAccount(ctx, users, virtualAccounts);
   });
   
   bot.action('retry_deposit', (ctx) => {
@@ -1353,10 +1568,13 @@ module.exports = {
   handleCreateVirtualAccount,
   handleForceNewAccount,
   handleRetrieveAccount,
+  handleRestoreFromBackup,
   handleManualDeposit,
   handleCancelDeposit,
   handleChangeEmail,
   handleContactAdminDirect,
+  handleCheckBalance,
+  handleViewMyAccount,
   setupDepositHandlers,
   handleBillstackWebhook,
   generateReference,
