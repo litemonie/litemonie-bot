@@ -1542,8 +1542,14 @@ async function setupCallbackHandlers(bot) {
 async function setupWebhook(bot, webhookUrl) {
   try {
     console.log(`🌐 Setting up webhook: ${webhookUrl}`);
+    
+    // First, delete any existing webhook to prevent conflicts
     await bot.telegram.deleteWebhook();
+    console.log('✅ Deleted existing webhook');
+    
+    // Then set the new webhook
     await bot.telegram.setWebhook(webhookUrl);
+    
     const webhookInfo = await bot.telegram.getWebhookInfo();
     console.log('✅ Webhook configured successfully:');
     console.log(`   URL: ${webhookInfo.url}`);
@@ -1561,10 +1567,6 @@ async function stopBot() {
   try {
     if (botInstance) {
       await botInstance.stop();
-      if (process.env.NODE_ENV === 'production') {
-        await botInstance.telegram.deleteWebhook();
-        console.log('✅ Webhook deleted');
-      }
       console.log('✅ Bot stopped');
     }
     if (serverInstance) {
@@ -1656,19 +1658,18 @@ async function launchBot(useWebhook = false) {
       }
     });
     
+    // Delete webhook first to prevent conflicts, then launch accordingly
+    await botInstance.telegram.deleteWebhook();
+    console.log('✅ Deleted existing webhook');
+    
     if (useWebhook || process.env.NODE_ENV === 'production') {
       const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
       const webhookUrl = `${baseUrl}/webhook`;
-      const webhookSuccess = await setupWebhook(botInstance, webhookUrl);
-      if (webhookSuccess) {
-        console.log('\n✅ Bot running in PRODUCTION mode with webhook');
-      } else {
-        console.log('\n⚠️ Webhook setup failed, falling back to polling');
-        await botInstance.launch();
-      }
+      await setupWebhook(botInstance, webhookUrl);
     } else {
+      // Use polling mode - simpler and avoids conflicts
       await botInstance.launch();
-      console.log('\n✅ Bot running in DEVELOPMENT mode with polling');
+      console.log('✅ Bot running in DEVELOPMENT mode with polling');
     }
     
     console.log(`👑 Admin ID: ${require('./config').CONFIG.ADMIN_ID}`);
