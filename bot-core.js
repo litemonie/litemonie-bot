@@ -1606,9 +1606,39 @@ async function launchBot(useWebhook = false) {
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
+    // Text handler - Check for deposit sessions FIRST
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       if (text.startsWith('/')) return;
+      
+      // First, check if user has an active deposit session (email/phone collection)
+      const userId = ctx.from.id.toString();
+      const sessions = getSessions();
+      const session = sessions[userId];
+      
+      if (session && (session.action === 'collect_email' || session.action === 'collect_phone')) {
+        // This is a deposit-related text, handle it with depositFunds
+        console.log(`📝 Handling deposit text for user ${userId}: ${text}`);
+        await depositFunds.handleDepositText(ctx, text, {
+          findById: async (id) => {
+            const users = getUsers();
+            return users[id] || null;
+          },
+          update: async (id, data) => {
+            const users = getUsers();
+            if (users[id]) {
+              Object.assign(users[id], data);
+              setUsers(users);
+              await saveAllData();
+              return true;
+            }
+            return false;
+          }
+        }, virtualAccounts);
+        return;
+      }
+      
+      // Otherwise, use the regular text handler
       await handleTextMessage(ctx, text);
     });
     
