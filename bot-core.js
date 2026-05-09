@@ -74,7 +74,6 @@ async function createBot() {
   } catch (error) {
     console.error('❌ Could not fetch bot username:', error.message);
     
-    // Better error handling for 404
     if (error.code === 404 || (error.response && error.response.error_code === 404)) {
       console.error('\n🔴 CRITICAL: Bot token is invalid or bot does not exist!');
       console.error('Please check:');
@@ -87,10 +86,9 @@ async function createBot() {
     
     console.warn('⚠️ Using fallback username - UPDATE THIS!');
     bot.options = bot.options || {};
-    bot.options.username = 'litewaydatabot'; // Your actual bot username
+    bot.options.username = 'litewaydatabot';
   }
   
-  // Initialize systems
   await initStorage();
   await loadData();
   await initializeDeviceHandler(bot);
@@ -99,19 +97,13 @@ async function createBot() {
   return bot;
 }
 
-// ========== SETUP EXPRESS SERVER WITH PRODUCTION CONFIG ==========
 function setupExpressServer(bot) {
   const app = express();
   
-  // Middleware
   app.use(express.json());
-  
-  // Trust proxy for Render (important for webhooks)
   app.set('trust proxy', true);
 
-  // ========== PRODUCTION CORS CONFIGURATION ==========
   app.use((req, res, next) => {
-    // List of allowed origins (your Mini App URLs)
     const allowedOrigins = [
       'https://litemonie-device.onrender.com',
       'https://opuenekeke.github.io',
@@ -123,28 +115,23 @@ function setupExpressServer(bot) {
     if (allowedOrigins.includes(origin)) {
       res.header('Access-Control-Allow-Origin', origin);
     } else if (process.env.NODE_ENV !== 'production') {
-      // For development, allow all (but restrict in production)
       res.header('Access-Control-Allow-Origin', '*');
     }
     
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, ngrok-skip-browser-warning');
     
-    // Handle preflight requests
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
     next();
   });
 
-  // ========== DEBUG ENDPOINTS ==========
-  // Simple ping endpoint
   app.get('/ping', (req, res) => {
     console.log('📡 Ping received!');
     res.send('pong');
   });
 
-  // Test webhook endpoint
   app.post('/test-webhook', (req, res) => {
     console.log('🧪 Test webhook received!');
     console.log('Body:', JSON.stringify(req.body));
@@ -155,7 +142,6 @@ function setupExpressServer(bot) {
     });
   });
 
-  // ========== HEALTH CHECK ENDPOINTS FOR RENDER ==========
   app.get('/health', (req, res) => {
     res.status(200).json({ 
       status: 'healthy', 
@@ -196,7 +182,6 @@ function setupExpressServer(bot) {
     }
   });
 
-  // ========== WEBHOOK ENDPOINT FOR TELEGRAM ==========
   app.post('/webhook', (req, res) => {
     console.log('📩 WEBHOOK RECEIVED AT:', new Date().toISOString());
     console.log('📦 Update ID:', req.body?.update_id);
@@ -204,11 +189,9 @@ function setupExpressServer(bot) {
     console.log('👤 From:', req.body?.message?.from?.id, req.body?.message?.from?.first_name);
     
     try {
-      // Process update with Telegraf
       bot.handleUpdate(req.body, (err, result) => {
         if (err) {
           console.error('❌ Bot handleUpdate error:', err);
-          // Always return 200 to Telegram
           res.status(200).send('OK');
         } else {
           console.log('✅ Update handled successfully');
@@ -217,25 +200,14 @@ function setupExpressServer(bot) {
       });
     } catch (error) {
       console.error('❌ Webhook error:', error);
-      // CRITICAL: Always return 200 to Telegram so it doesn't keep retrying
       res.status(200).send('OK');
     }
   });
 
-  // ========== BILLSTACK WEBHOOK ENDPOINT ==========
   const billstackWebhook = require('./billstack-webhook');
   app.use('/billstack-webhook', billstackWebhook);
   console.log('✅ Billstack webhook handler active');
 
-  // ========== DEPOSIT WEBHOOK (DISABLED - Using billstack-webhook.js) ==========
-  // try {
-  //   const usersForDeposit = { ...require('./database').getUsers(), ...userMethods };
-  //   depositFunds.setupDepositHandlers(bot, usersForDeposit, virtualAccounts);
-  //   console.log('✅ Deposit handlers setup');
-  // } catch (error) {
-  //   console.error('❌ Deposit handlers failed:', error);
-  // }
-  
   // ========== MINI APP API ENDPOINTS ==========
   app.get('/api/device-data', async (req, res) => {
     try {
@@ -310,17 +282,14 @@ async function setupCommands(bot) {
   const { isAdmin, formatCurrency, escapeMarkdownV2, isValidEmail } = require('./utils');
   const { Markup } = require('telegraf');
   
-  // ========== START COMMAND WITH MINI APP PAYLOAD HANDLING ==========
   bot.start(async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
     const isUserAdmin = isAdmin(userId);
     
-    // CAPTURE MINI APP START PAYLOAD
     const startPayload = ctx.startPayload;
     console.log(`🚀 /start from user ${userId} | Payload: ${startPayload || 'none'}`);
     
-    // CHECK IF THIS IS FROM MINI APP
     if (startPayload && startPayload.includes('session=')) {
       console.log(`📱 Mini App deep link detected for user ${userId}`);
       
@@ -353,7 +322,6 @@ async function setupCommands(bot) {
       }
     }
     
-    // NORMAL START COMMAND
     if (!user.firstName) {
       user.firstName = ctx.from.first_name || '';
       user.lastName = ctx.from.last_name || '';
@@ -391,7 +359,6 @@ async function setupCommands(bot) {
     );
   });
   
-  // ========== ADMIN CREDIT USER COMMAND (FIXED) ==========
   bot.command('credituser', async (ctx) => {
     const adminId = ctx.from.id.toString();
     if (!isAdmin(adminId)) {
@@ -427,7 +394,6 @@ async function setupCommands(bot) {
     const targetUser = users[targetUserId];
     const userName = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || 'Unknown';
     
-    // Store credit data in session instead of passing through callback
     const sessions = getSessions();
     const creditId = `credit_${Date.now()}`;
     sessions[creditId] = {
@@ -459,7 +425,6 @@ async function setupCommands(bot) {
     );
   });
 
-  // ========== SEARCH USER COMMAND ==========
   bot.command('searchuser', async (ctx) => {
     const adminId = ctx.from.id.toString();
     if (!isAdmin(adminId)) {
@@ -514,7 +479,6 @@ async function setupCommands(bot) {
     await ctx.reply(message, { parse_mode: 'MarkdownV2' });
   });
 
- // ========== ADMIN SET USER EMAIL COMMAND ==========
   bot.command('setuseremail', async (ctx) => {
     const adminId = ctx.from.id.toString();
     if (!isAdmin(adminId)) return ctx.reply('❌ Admin only');
@@ -537,13 +501,10 @@ async function setupCommands(bot) {
     await ctx.reply(`✅ Email set for user ${userId}: ${email}`);
   });
 
-  // ========== PROFILE COMMAND ==========
   bot.command('profile', async (ctx) => {
     await showProfile(ctx);
   });
 
-  
-  // ========== MINI APP COMMANDS ==========
   bot.command('app', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -610,7 +571,6 @@ async function setupCommands(bot) {
     await ctx.reply(message, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(buttons) });
   });
   
-  // ========== TRANSACTION COMMANDS ==========
   bot.command('transactions', handleAdminTransactionTracking);
   bot.command('failedtransactions', async (ctx) => {
     if (!isAdmin(ctx.from.id.toString())) return ctx.reply('❌ Admin only', { parse_mode: 'MarkdownV2' });
@@ -655,7 +615,6 @@ async function setupCommands(bot) {
     );
   });
   
-  // ========== KORA API TEST COMMAND (FIXED) ==========
   bot.command('testkora', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!isAdmin(userId)) {
@@ -704,7 +663,6 @@ async function setupCommands(bot) {
     }
   });
   
-  // ========== BASIC COMMANDS ==========
   bot.command('setpin', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -737,7 +695,6 @@ async function setupCommands(bot) {
     await deviceHandler.handleDeviceMenu(ctx);
   });
   
-  // ========== DEVICE ADMIN COMMANDS ==========
   bot.command('adddevice', async (ctx) => {
     if (!isAdmin(ctx.from.id.toString())) return ctx.reply('❌ Admin only', { parse_mode: 'MarkdownV2' });
     const deviceHandler = getDeviceHandler();
@@ -778,7 +735,6 @@ async function setupMenuHandlers(bot) {
   const { getDeviceHandler, getDeviceLockApp } = require('./device-system');
   const { userMethods, virtualAccounts, sessionManager } = require('./handlers');
   
-  // Import feature modules
   const buyAirtime = require('./app/buyAirtime');
   const buyData = require('./app/buyData');
   const depositFunds = require('./app/depositFunds');
@@ -789,7 +745,6 @@ async function setupMenuHandlers(bot) {
   const buyExamPins = require('./app/Bill/exam');
   const buyCardPins = require('./app/Card pins/buyCardPins');
   
-  // Menu handlers
   bot.hears('📱 Device Financing', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -886,39 +841,76 @@ async function setupMenuHandlers(bot) {
     await ctx.reply(`💰 \\*YOUR WALLET BALANCE\\*\n\n💵 Available: ${formatCurrency(user.wallet)}`, { parse_mode: 'MarkdownV2' });
   });
   
+  // ========== WORKING DEPOSIT FUNDS HANDLER ==========
   bot.hears('💳 Deposit Funds', async (ctx) => {
     const userId = ctx.from.id.toString();
+    console.log(`🔥 DEPOSIT BUTTON CLICKED by user: ${userId}`);
+    
+    const { Markup } = require('telegraf');
     const user = await initUser(userId);
     
     if ((user.kycStatus || 'pending') !== 'approved') {
-      return ctx.reply('❌ KYC verification required. Contact @opuenekeke to verify.', { parse_mode: 'Markdown' });
+      return ctx.reply(
+        '❌ *KYC Verification Required*\n\n' +
+        'Please complete KYC verification before depositing funds.\n\n' +
+        'Contact @opuenekeke for assistance.',
+        { parse_mode: 'Markdown' }
+      );
     }
     
-    try {
-      // Create a users object that has the findById method
-      const usersObject = {
-        findById: async (id) => {
-          const users = getUsers();
-          return users[id] || null;
-        },
-        update: async (id, data) => {
-          const users = getUsers();
-          if (users[id]) {
-            Object.assign(users[id], data);
-            setUsers(users);
-            await saveAllData();
-            return true;
-          }
-          return false;
-        },
-        getAll: () => getUsers()
-      };
+    // Check if user has email and phone
+    const needsEmail = !user.email;
+    const needsPhone = !user.phone;
+    
+    if (needsEmail || needsPhone) {
+      let message = '⚠️ *Additional Information Required*\n\n';
+      if (needsEmail) message += '📧 Email address is required\n';
+      if (needsPhone) message += '📱 Phone number is required\n\n';
+      message += 'Please provide the following information:';
       
-      await depositFunds.handleDeposit(ctx, usersObject, virtualAccounts);
-    } catch (error) {
-      console.error('Deposit handler error:', error);
-      await ctx.reply(`❌ Error: ${error.message}\n\nPlease try again or contact support.`, { parse_mode: 'Markdown' });
+      if (needsEmail) {
+        await ctx.reply(
+          message + '\n\nPlease enter your email address:',
+          { parse_mode: 'Markdown' }
+        );
+        const sessions = getSessions();
+        sessions[userId] = { action: 'collect_email', step: 1 };
+        setSessions(sessions);
+        return;
+      } else if (needsPhone) {
+        await ctx.reply(
+          message + '\n\nPlease enter your phone number:',
+          { parse_mode: 'Markdown' }
+        );
+        const sessions = getSessions();
+        sessions[userId] = { action: 'collect_phone', step: 1 };
+        setSessions(sessions);
+        return;
+      }
     }
+    
+    // Show deposit options
+    await ctx.reply(
+      `🏦 *DEPOSIT FUNDS*\n\n` +
+      `👤 *User ID:* \`${userId}\`\n` +
+      `💰 *Current Balance:* ${formatCurrency(user.wallet || 0)}\n\n` +
+      `📧 *Email:* ${user.email}\n` +
+      `📱 *Phone:* ${user.phone}\n\n` +
+      `💡 *Deposit Instructions:*\n\n` +
+      `1️⃣ Click "Get Virtual Account" below\n` +
+      `2️⃣ You will receive a unique account number\n` +
+      `3️⃣ Transfer funds to that account\n` +
+      `4️⃣ Funds will be auto-credited within 5 minutes\n\n` +
+      `📞 *Support:* @opuenekeke`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🏦 Get Virtual Account', 'create_virtual_account')],
+          [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+          [Markup.button.callback('🏠 Back to Menu', 'start')]
+        ])
+      }
+    );
   });
   
   bot.hears('📜 Transaction History', async (ctx) => {
@@ -1004,7 +996,6 @@ async function setupCallbackHandlers(bot) {
   } = require('./handlers');
   const { Markup } = require('telegraf');
   
-  // Import feature callbacks
   const buyAirtime = require('./app/buyAirtime');
   const buyData = require('./app/buyData');
   const admin = require('./app/admin');
@@ -1015,7 +1006,6 @@ async function setupCallbackHandlers(bot) {
   const buyElectricity = require('./app/Bill/light');
   const buyTVSubscription = require('./app/Bill/tv');
   
-  // Register module callbacks
   const airtimeCallbacks = buyAirtime.getCallbacks?.(bot, getUsers(), getSessions(), require('./config').CONFIG, require('./config').NETWORK_CODES) || {};
   const dataCallbacks = buyData.getCallbacks?.(bot, getUsers(), require('./handlers').sessionManager, require('./config').CONFIG) || {};
   const adminCallbacks = admin.getCallbacks?.(bot, getUsers(), require('./database').getTransactions(), require('./config').CONFIG) || {};
@@ -1026,7 +1016,6 @@ async function setupCallbackHandlers(bot) {
   const electricityCallbacks = buyElectricity.getCallbacks?.(bot, getUsers(), require('./handlers').sessionManager, require('./config').CONFIG) || {};
   const tvCallbacks = buyTVSubscription.getCallbacks?.(bot, getUsers(), require('./handlers').sessionManager, require('./config').CONFIG) || {};
   
-  // Register device callbacks
   const deviceCallbacks = getDeviceCallbacks() || {};
   Object.entries(deviceCallbacks).forEach(([pattern, handler]) => {
     try {
@@ -1040,7 +1029,6 @@ async function setupCallbackHandlers(bot) {
     } catch (e) { console.error(`❌ Device callback failed: ${pattern}`, e.message); }
   });
   
-  // Register Mini App callbacks
   const miniAppCallbacks = getMiniAppCallbacks() || {};
   Object.entries(miniAppCallbacks).forEach(([pattern, handler]) => {
     try {
@@ -1052,7 +1040,6 @@ async function setupCallbackHandlers(bot) {
     } catch (e) { console.error(`❌ Mini App callback failed: ${pattern}`, e.message); }
   });
   
-  // ========== FIXED ADMIN CREDIT CALLBACKS ==========
   bot.action(/^confirm_credit:(.+)$/, async (ctx) => {
     const adminId = ctx.from.id.toString();
     if (!isAdmin(adminId)) {
@@ -1068,7 +1055,6 @@ async function setupCallbackHandlers(bot) {
       return ctx.answerCbQuery();
     }
 
-    // Verify this admin created the credit
     if (creditData.adminId !== adminId) {
       await ctx.editMessageText('❌ You are not authorized to confirm this credit.');
       return ctx.answerCbQuery();
@@ -1086,18 +1072,13 @@ async function setupCallbackHandlers(bot) {
         return ctx.answerCbQuery();
       }
       
-      // Initialize wallet if needed
       if (!users[targetUserId].wallet) users[targetUserId].wallet = 0;
       
       const previousBalance = users[targetUserId].wallet;
-      
-      // Add the amount
       users[targetUserId].wallet += amount;
       
-      // Save users
       require('./database').setUsers(users);
       
-      // Record transaction using the database function
       await recordTransaction(targetUserId, {
         type: 'admin_credit',
         amount: amount,
@@ -1114,7 +1095,6 @@ async function setupCallbackHandlers(bot) {
       
       await saveAllData();
       
-      // Clean up session
       delete sessions[creditId];
       setSessions(sessions);
       
@@ -1131,7 +1111,6 @@ async function setupCallbackHandlers(bot) {
         { parse_mode: 'MarkdownV2' }
       );
       
-      // Notify user
       try {
         await ctx.telegram.sendMessage(
           targetUserId,
@@ -1174,7 +1153,6 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
-  // Register other callbacks
   const allCallbacks = {
     ...airtimeCallbacks, ...dataCallbacks, ...adminCallbacks, ...kycCallbacks,
     ...sendMoneyCallbacks, ...cardPinCallbacks, ...examPinCallbacks,
@@ -1193,7 +1171,6 @@ async function setupCallbackHandlers(bot) {
     } catch (e) { console.error(`❌ Callback failed: ${pattern}`, e.message); }
   });
   
-  // ========== TRANSACTION TRACKING CALLBACKS ==========
   bot.action('admin_transaction_tracking', async (ctx) => {
     await handleAdminTransactionTracking(ctx);
     await ctx.answerCbQuery();
@@ -1345,7 +1322,6 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
-  // Export menu callbacks
   ['today', 'failed', 'pending', 'api', 'all'].forEach(type => {
     bot.action(`admin_export_${type}_menu`, async (ctx) => {
       await exportManager.quickExport(ctx, type);
@@ -1391,7 +1367,6 @@ async function setupCallbackHandlers(bot) {
     });
   });
   
-  // ========== STANDARD ADMIN CALLBACKS ==========
   bot.action('admin_users', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!isAdmin(userId)) return ctx.answerCbQuery('❌ Admin only');
@@ -1552,41 +1527,158 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
 
-  // ========== PROFILE CALLBACKS ==========
-  // Profile refresh callback
   bot.action('refresh_profile', async (ctx) => {
     const { showProfile } = require('./profile');
     await ctx.answerCbQuery();
     await showProfile(ctx, virtualAccounts);
   });
 
-  // Admin view all users callback
   bot.action('admin_view_all_users', async (ctx) => {
     const { adminViewAllUsers } = require('./profile');
     await adminViewAllUsers(ctx);
   });
   
+  // ========== DEPOSIT CALLBACK HANDLERS ==========
+  bot.action('create_virtual_account', async (ctx) => {
+    console.log('🟢 create_virtual_account callback triggered');
+    try {
+      const { Markup } = require('telegraf');
+      const telegramId = ctx.from.id.toString();
+      
+      await ctx.answerCbQuery('⏳ Processing...');
+      
+      // Get user data
+      const users = getUsers();
+      const user = users[telegramId];
+      
+      if (!user || !user.email || !user.phone) {
+        await ctx.editMessageText(
+          `❌ *Cannot Create Virtual Account*\n\n` +
+          `Missing required information:\n` +
+          `${!user?.email ? '📧 Email not set\n' : ''}` +
+          `${!user?.phone ? '📱 Phone not set\n' : ''}\n\n` +
+          `Please use /start and update your profile.`,
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+      
+      // Try to create virtual account using depositFunds module
+      try {
+        const usersObject = {
+          findById: async (id) => {
+            const users = getUsers();
+            return users[id] || null;
+          }
+        };
+        
+        const result = await depositFunds.createVirtualAccountForUser({
+          telegramId: telegramId,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone
+        }, virtualAccounts);
+        
+        if (result && result.account_number) {
+          await ctx.editMessageText(
+            `✅ *Virtual Account Created!*\n\n` +
+            `🏦 *Bank:* ${result.bank_name}\n` +
+            `🔢 *Account Number:* \`${result.account_number}\`\n` +
+            `👤 *Account Name:* ${result.account_name}\n\n` +
+            `💰 *How to Deposit:*\n` +
+            `1. Transfer to this account\n` +
+            `2. Funds auto-credit within 5 minutes\n\n` +
+            `📞 Support: @opuenekeke`,
+            {
+              parse_mode: 'Markdown',
+              ...Markup.inlineKeyboard([
+                [Markup.button.callback('🏠 Home', 'start')]
+              ])
+            }
+          );
+        } else {
+          throw new Error('Account creation failed');
+        }
+      } catch (createError) {
+        console.error('Error creating account:', createError);
+        await ctx.editMessageText(
+          `❌ *Virtual Account Creation Failed*\n\n` +
+          `${createError.message}\n\n` +
+          `Please contact @opuenekeke for assistance.\n\n` +
+          `💡 *Alternative:* Use manual deposit option.`,
+          {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+              [Markup.button.callback('🏠 Home', 'start')]
+            ])
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Create virtual account error:', error);
+      await ctx.answerCbQuery('❌ Error');
+    }
+  });
+  
+  bot.action('manual_deposit', async (ctx) => {
+    try {
+      const { Markup } = require('telegraf');
+      const telegramId = ctx.from.id.toString();
+      
+      await ctx.answerCbQuery();
+      
+      await ctx.editMessageText(
+        `📋 *MANUAL DEPOSIT*\n\n` +
+        `Contact @opuenekeke with:\n` +
+        `• User ID: \`${telegramId}\`\n` +
+        `• Amount\n` +
+        `• Payment proof\n\n` +
+        `⏰ Processing: 1-24 hours`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🏦 Try Virtual Account', 'create_virtual_account')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+    } catch (error) {
+      console.error('Manual deposit error:', error);
+      await ctx.answerCbQuery('❌ Error');
+    }
+  });
+  
+  bot.action('contact_admin_direct', async (ctx) => {
+    try {
+      const { Markup } = require('telegraf');
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        '📞 Contact @opuenekeke for assistance.',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('🏠 Home', 'start')]
+        ])
+      );
+    } catch (error) {
+      console.error('Contact admin error:', error);
+      await ctx.answerCbQuery('❌ Error');
+    }
+  });
+  
   console.log('✅ All callbacks registered');
 }
 
-// ========== WEBHOOK SETUP FUNCTION ==========
 async function setupWebhook(bot, webhookUrl) {
   try {
     console.log(`🌐 Setting up webhook: ${webhookUrl}`);
-    
-    // Delete any existing webhook
     await bot.telegram.deleteWebhook();
-    
-    // Set the new webhook
     await bot.telegram.setWebhook(webhookUrl);
-    
-    // Verify webhook was set
     const webhookInfo = await bot.telegram.getWebhookInfo();
     console.log('✅ Webhook configured successfully:');
     console.log(`   URL: ${webhookInfo.url}`);
     console.log(`   Pending updates: ${webhookInfo.pending_update_count || 0}`);
     console.log(`   Max connections: ${webhookInfo.max_connections || 40}`);
-    
     return true;
   } catch (error) {
     console.error('❌ Failed to setup webhook:', error.message);
@@ -1594,24 +1686,17 @@ async function setupWebhook(bot, webhookUrl) {
   }
 }
 
-// ========== STOP BOT FUNCTION ==========
 async function stopBot() {
   console.log('🛑 Stopping bot...');
-  
   try {
     if (botInstance) {
-      // Stop the bot
       await botInstance.stop();
-      
-      // If in production, delete webhook
       if (process.env.NODE_ENV === 'production') {
         await botInstance.telegram.deleteWebhook();
         console.log('✅ Webhook deleted');
       }
-      
       console.log('✅ Bot stopped');
     }
-    
     if (serverInstance) {
       await new Promise((resolve) => {
         serverInstance.close(() => {
@@ -1620,20 +1705,16 @@ async function stopBot() {
         });
       });
     }
-    
   } catch (error) {
     console.error('❌ Error stopping bot:', error);
   }
 }
 
-// ========== GET BOT INFO FUNCTION ==========
 async function getBotInfo() {
   if (!botInstance) return null;
-  
   try {
     const me = await botInstance.telegram.getMe();
     const webhookInfo = await botInstance.telegram.getWebhookInfo();
-    
     return {
       username: me.username,
       id: me.id,
@@ -1647,52 +1728,38 @@ async function getBotInfo() {
   }
 }
 
-// ========== MAIN LAUNCH FUNCTION ==========
 async function launchBot(useWebhook = false) {
   try {
-    // Create bot instance
     botInstance = await createBot();
-    
-    // Setup Express server
     const app = setupExpressServer(botInstance);
-    
-    // Setup commands and handlers
     await setupCommands(botInstance);
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
-    // Text handler
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       if (text.startsWith('/')) return;
       await handleTextMessage(ctx, text);
     });
     
-    // Error handler
     botInstance.catch((err, ctx) => {
       console.error('❌ Global Error:', err);
       ctx.reply('❌ An error occurred', { parse_mode: 'MarkdownV2' }).catch(() => {});
     });
     
-    // Start server
     const PORT = process.env.PORT || 3000;
     serverInstance = app.listen(PORT, '0.0.0.0', () => {
       console.log(`\n📡 Server running on port ${PORT}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-      
       if (process.env.RENDER_EXTERNAL_URL) {
         console.log(`🌍 Public URL: ${process.env.RENDER_EXTERNAL_URL}`);
       }
     });
     
-    // Launch bot (webhook or polling)
     if (useWebhook || process.env.NODE_ENV === 'production') {
-      // Production: Use webhook
       const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
       const webhookUrl = `${baseUrl}/webhook`;
-      
       const webhookSuccess = await setupWebhook(botInstance, webhookUrl);
-      
       if (webhookSuccess) {
         console.log('\n✅ Bot running in PRODUCTION mode with webhook');
       } else {
@@ -1700,30 +1767,23 @@ async function launchBot(useWebhook = false) {
         await botInstance.launch();
       }
     } else {
-      // Development: Use polling
       await botInstance.launch();
       console.log('\n✅ Bot running in DEVELOPMENT mode with polling');
     }
     
     console.log(`👑 Admin ID: ${require('./config').CONFIG.ADMIN_ID}`);
     console.log(`🤖 Bot Username: @${botInstance.options?.username || 'unknown'}`);
-    
     return botInstance;
-    
   } catch (error) {
     console.error('❌ Failed to launch bot:', error);
-    
-    // Better error handling for 404
     if (error.code === 404 || (error.response && error.response.error_code === 404)) {
       console.error('\n🔴 CRITICAL: Bot token is invalid or bot does not exist!');
       console.error('Please check your BOT_TOKEN environment variable in Render dashboard.');
     }
-    
     throw error;
   }
 }
 
-// Export functions
 module.exports = { 
   launchBot,
   stopBot,
