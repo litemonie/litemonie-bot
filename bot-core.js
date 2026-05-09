@@ -63,7 +63,6 @@ async function createBot() {
   
   const bot = new Telegraf(process.env.BOT_TOKEN);
   
-  // ========== FETCH AND CACHE BOT USERNAME ==========
   try {
     console.log('🔍 Fetching bot username from Telegram API...');
     const botInfo = await bot.telegram.getMe();
@@ -208,7 +207,6 @@ function setupExpressServer(bot) {
   app.use('/billstack-webhook', billstackWebhook);
   console.log('✅ Billstack webhook handler active');
 
-  // ========== MINI APP API ENDPOINTS ==========
   app.get('/api/device-data', async (req, res) => {
     try {
       const { sessionId, token } = req.query;
@@ -296,16 +294,13 @@ async function setupCommands(bot) {
       const deviceLockApp = getDeviceLockApp();
       if (deviceLockApp) {
         try {
-          await ctx.reply('📱 <b>Opening Device Lock App...</b>\n\nPlease wait...', { 
-            parse_mode: 'HTML' 
-          });
+          await ctx.reply('📱 <b>Opening Device Lock App...</b>\n\nPlease wait...', { parse_mode: 'HTML' });
           
           const result = await deviceLockApp.generateMiniAppLink(userId);
           
           if (result.success) {
             await ctx.reply(
-              `📱 <b>Device Lock App</b>\n\n` +
-              `Click the button below to open your device management portal:`,
+              `📱 <b>Device Lock App</b>\n\nClick the button below to open your device management portal:`,
               {
                 parse_mode: 'HTML',
                 ...Markup.inlineKeyboard([
@@ -416,10 +411,8 @@ async function setupCommands(bot) {
       {
         parse_mode: 'MarkdownV2',
         ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback('✅ CONFIRM CREDIT', `confirm_credit:${creditId}`),
-            Markup.button.callback('❌ CANCEL', 'cancel_credit')
-          ]
+          [Markup.button.callback('✅ CONFIRM CREDIT', `confirm_credit:${creditId}`),
+           Markup.button.callback('❌ CANCEL', 'cancel_credit')]
         ])
       }
     );
@@ -457,7 +450,6 @@ async function setupCommands(bot) {
           phone.includes(searchTerm)) {
         results.push({ userId, ...userData });
       }
-      
       if (results.length >= 10) break;
     }
     
@@ -466,7 +458,6 @@ async function setupCommands(bot) {
     }
     
     let message = `🔍 *SEARCH RESULTS:* ${results.length} users\n\n`;
-    
     results.forEach((user, index) => {
       message += `${index + 1}. *${escapeMarkdownV2(user.firstName || '')} ${escapeMarkdownV2(user.lastName || '')}*\n`;
       message += `   🆔 ID: \`${user.userId}\`\n`;
@@ -475,7 +466,6 @@ async function setupCommands(bot) {
       message += `   💰 Balance: ${formatCurrency(user.wallet || 0)}\n`;
       message += `   🛂 KYC: ${user.kycStatus || 'pending'}\n\n`;
     });
-    
     await ctx.reply(message, { parse_mode: 'MarkdownV2' });
   });
 
@@ -538,7 +528,6 @@ async function setupCommands(bot) {
       message += `   🔒 IMEI: ${inst.imeiStatus || 'Pending'}\n`;
       message += `   💰 Paid: ${inst.installmentsPaid}/${inst.totalInstallments + 1}\n\n`;
     });
-    
     await ctx.reply(message, {
       parse_mode: 'MarkdownV2',
       ...Markup.inlineKeyboard([[Markup.button.callback('📱 Open App', 'device_mini_app')]])
@@ -627,21 +616,18 @@ async function setupCommands(bot) {
     
     try {
       const result = await testKoraConnection();
-      
       if (result.success) {
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           msg.message_id,
           null,
-          '✅ *KORA API CONNECTION SUCCESSFUL*\n\n' +
-          'Your API key is working correctly!',
+          '✅ *KORA API CONNECTION SUCCESSFUL*\n\nYour API key is working correctly!',
           { parse_mode: 'MarkdownV2' }
         );
       } else {
         const errorMessage = `❌ *KORA API CONNECTION FAILED*\n\n` +
           `*Error:* ${escapeMarkdownV2(result.message)}\n\n` +
           `Please check your KORA_API_KEY in the .env file.`;
-        
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           msg.message_id,
@@ -652,7 +638,6 @@ async function setupCommands(bot) {
       }
     } catch (error) {
       const errorMessage = `❌ *KORA API ERROR*\n\n${escapeMarkdownV2(error.message)}`;
-      
       await ctx.telegram.editMessageText(
         ctx.chat.id,
         msg.message_id,
@@ -851,14 +836,11 @@ async function setupMenuHandlers(bot) {
     
     if ((user.kycStatus || 'pending') !== 'approved') {
       return ctx.reply(
-        '❌ *KYC Verification Required*\n\n' +
-        'Please complete KYC verification before depositing funds.\n\n' +
-        'Contact @opuenekeke for assistance.',
+        '❌ *KYC Verification Required*\n\nPlease complete KYC verification before depositing funds.\n\nContact @opuenekeke for assistance.',
         { parse_mode: 'Markdown' }
       );
     }
     
-    // Check if user has email and phone
     const needsEmail = !user.email;
     const needsPhone = !user.phone;
     
@@ -869,19 +851,13 @@ async function setupMenuHandlers(bot) {
       message += 'Please provide the following information:';
       
       if (needsEmail) {
-        await ctx.reply(
-          message + '\n\nPlease enter your email address:',
-          { parse_mode: 'Markdown' }
-        );
+        await ctx.reply(message + '\n\nPlease enter your email address:', { parse_mode: 'Markdown' });
         const sessions = getSessions();
         sessions[userId] = { action: 'collect_email', step: 1 };
         setSessions(sessions);
         return;
       } else if (needsPhone) {
-        await ctx.reply(
-          message + '\n\nPlease enter your phone number:',
-          { parse_mode: 'Markdown' }
-        );
+        await ctx.reply(message + '\n\nPlease enter your phone number:', { parse_mode: 'Markdown' });
         const sessions = getSessions();
         sessions[userId] = { action: 'collect_phone', step: 1 };
         setSessions(sessions);
@@ -889,7 +865,6 @@ async function setupMenuHandlers(bot) {
       }
     }
     
-    // Show deposit options
     await ctx.reply(
       `🏦 *DEPOSIT FUNDS*\n\n` +
       `👤 *User ID:* \`${userId}\`\n` +
@@ -1538,132 +1513,25 @@ async function setupCallbackHandlers(bot) {
     await adminViewAllUsers(ctx);
   });
   
-  // ========== DEPOSIT CALLBACK HANDLERS ==========
+  // ========== DEPOSIT CALLBACK HANDLERS - FIXED ==========
   bot.action('create_virtual_account', async (ctx) => {
     console.log('🟢 create_virtual_account callback triggered');
-    try {
-      const { Markup } = require('telegraf');
-      const telegramId = ctx.from.id.toString();
-      
-      await ctx.answerCbQuery('⏳ Processing...');
-      
-      // Get user data
-      const users = getUsers();
-      const user = users[telegramId];
-      
-      if (!user || !user.email || !user.phone) {
-        await ctx.editMessageText(
-          `❌ *Cannot Create Virtual Account*\n\n` +
-          `Missing required information:\n` +
-          `${!user?.email ? '📧 Email not set\n' : ''}` +
-          `${!user?.phone ? '📱 Phone not set\n' : ''}\n\n` +
-          `Please use /start and update your profile.`,
-          { parse_mode: 'Markdown' }
-        );
-        return;
+    await depositFunds.handleCreateVirtualAccount(ctx, {
+      findById: async (id) => {
+        const users = getUsers();
+        return users[id] || null;
       }
-      
-      // Try to create virtual account using depositFunds module
-      try {
-        const usersObject = {
-          findById: async (id) => {
-            const users = getUsers();
-            return users[id] || null;
-          }
-        };
-        
-        const result = await depositFunds.createVirtualAccountForUser({
-          telegramId: telegramId,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          phone: user.phone
-        }, virtualAccounts);
-        
-        if (result && result.account_number) {
-          await ctx.editMessageText(
-            `✅ *Virtual Account Created!*\n\n` +
-            `🏦 *Bank:* ${result.bank_name}\n` +
-            `🔢 *Account Number:* \`${result.account_number}\`\n` +
-            `👤 *Account Name:* ${result.account_name}\n\n` +
-            `💰 *How to Deposit:*\n` +
-            `1. Transfer to this account\n` +
-            `2. Funds auto-credit within 5 minutes\n\n` +
-            `📞 Support: @opuenekeke`,
-            {
-              parse_mode: 'Markdown',
-              ...Markup.inlineKeyboard([
-                [Markup.button.callback('🏠 Home', 'start')]
-              ])
-            }
-          );
-        } else {
-          throw new Error('Account creation failed');
-        }
-      } catch (createError) {
-        console.error('Error creating account:', createError);
-        await ctx.editMessageText(
-          `❌ *Virtual Account Creation Failed*\n\n` +
-          `${createError.message}\n\n` +
-          `Please contact @opuenekeke for assistance.\n\n` +
-          `💡 *Alternative:* Use manual deposit option.`,
-          {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([
-              [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
-              [Markup.button.callback('🏠 Home', 'start')]
-            ])
-          }
-        );
-      }
-    } catch (error) {
-      console.error('Create virtual account error:', error);
-      await ctx.answerCbQuery('❌ Error');
-    }
+    }, virtualAccounts, bot);
   });
   
   bot.action('manual_deposit', async (ctx) => {
-    try {
-      const { Markup } = require('telegraf');
-      const telegramId = ctx.from.id.toString();
-      
-      await ctx.answerCbQuery();
-      
-      await ctx.editMessageText(
-        `📋 *MANUAL DEPOSIT*\n\n` +
-        `Contact @opuenekeke with:\n` +
-        `• User ID: \`${telegramId}\`\n` +
-        `• Amount\n` +
-        `• Payment proof\n\n` +
-        `⏰ Processing: 1-24 hours`,
-        {
-          parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback('🏦 Try Virtual Account', 'create_virtual_account')],
-            [Markup.button.callback('🏠 Home', 'start')]
-          ])
-        }
-      );
-    } catch (error) {
-      console.error('Manual deposit error:', error);
-      await ctx.answerCbQuery('❌ Error');
-    }
+    console.log('🟢 manual_deposit callback triggered');
+    await depositFunds.handleManualDeposit(ctx);
   });
   
   bot.action('contact_admin_direct', async (ctx) => {
-    try {
-      const { Markup } = require('telegraf');
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(
-        '📞 Contact @opuenekeke for assistance.',
-        Markup.inlineKeyboard([
-          [Markup.button.callback('🏠 Home', 'start')]
-        ])
-      );
-    } catch (error) {
-      console.error('Contact admin error:', error);
-      await ctx.answerCbQuery('❌ Error');
-    }
+    console.log('🟢 contact_admin_direct callback triggered');
+    await depositFunds.handleContactAdminDirect(ctx);
   });
   
   console.log('✅ All callbacks registered');
