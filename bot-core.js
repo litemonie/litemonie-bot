@@ -7,7 +7,7 @@ const { Telegraf } = require('telegraf');
 const express = require('express');
 const path = require('path');
 const { CONFIG } = require('./config');
-const { initStorage, loadData, setupAutoSave, saveAllData, recordTransaction, getUsers, setUsers } = require('./database');
+const { initStorage, loadData, setupAutoSave, saveAllData, recordTransaction, getUsers, setUsers, getSessions, setSessions } = require('./database');
 const { initUser, isAdmin, formatCurrency, escapeMarkdownV2 } = require('./utils');
 const { initializeDeviceHandler, getDeviceHandler, getDeviceCallbacks, getDeviceLockApp, getMiniAppCallbacks } = require('./device-system');
 const { systemTransactionManager, analyticsManager } = require('./transaction-system');
@@ -411,8 +411,10 @@ async function setupCommands(bot) {
       {
         parse_mode: 'MarkdownV2',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('✅ CONFIRM CREDIT', `confirm_credit:${creditId}`),
-           Markup.button.callback('❌ CANCEL', 'cancel_credit')]
+          [
+            Markup.button.callback('✅ CONFIRM CREDIT', `confirm_credit:${creditId}`),
+            Markup.button.callback('❌ CANCEL', 'cancel_credit')
+          ]
         ])
       }
     );
@@ -714,7 +716,7 @@ async function setupCommands(bot) {
 }
 
 async function setupMenuHandlers(bot) {
-  const { getUsers, getSessions, getTransactions } = require('./database');
+  const { getUsers, getSessions, getTransactions, setSessions } = require('./database');
   const { checkKYCAndPIN, formatCurrency, escapeMarkdownV2, isValidEmail, initUser } = require('./utils');
   const { Markup } = require('telegraf');
   const { getDeviceHandler, getDeviceLockApp } = require('./device-system');
@@ -1513,7 +1515,7 @@ async function setupCallbackHandlers(bot) {
     await adminViewAllUsers(ctx);
   });
   
-  // ========== DEPOSIT CALLBACK HANDLERS - FIXED ==========
+  // ========== DEPOSIT CALLBACK HANDLERS ==========
   bot.action('create_virtual_account', async (ctx) => {
     console.log('🟢 create_virtual_account callback triggered');
     await depositFunds.handleCreateVirtualAccount(ctx, {
