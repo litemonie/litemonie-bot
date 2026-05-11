@@ -521,7 +521,7 @@ async function handleDeposit(ctx, users, virtualAccounts) {
 }
 
 /* =====================================================
-   3️⃣ TEXT MESSAGE HANDLER - FIXED
+   3️⃣ TEXT MESSAGE HANDLER - COMPLETELY FIXED
 ===================================================== */
 async function handleDepositText(ctx, text, users, virtualAccounts) {
   try {
@@ -529,25 +529,42 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
     const telegramId = ctx.from.id.toString();
     const session = sessionManager.getSession(telegramId);
     
-    if (!session) return false;
+    console.log(`📝 Handling deposit text for user ${telegramId}: ${text}`);
+    console.log(`📊 Current session:`, session);
+    
+    if (!session) {
+      console.log('❌ No session found, returning false');
+      return false;
+    }
     
     const user = await users.findById(telegramId);
-    if (!user) return false;
+    if (!user) {
+      console.log('❌ User not found');
+      return false;
+    }
     
+    // Handle email collection
     if (session.action === 'collect_email') {
       const email = text.trim();
+      console.log(`📧 Processing email: ${email}`);
       
       if (!validateEmail(email)) {
         await ctx.reply('❌ Invalid email. Please enter a valid email (e.g., name@example.com):');
         return true;
       }
       
+      // Save email
       user.email = email;
       await users.update(telegramId, { email: email });
+      console.log(`✅ Email saved: ${email}`);
       
-      // Clear the email session and start phone collection
+      // Clear the email session
       sessionManager.clearSession(telegramId);
+      console.log('🗑️ Cleared email session');
+      
+      // Start phone collection
       sessionManager.startSession(telegramId, 'collect_phone');
+      console.log('📝 Started phone collection session');
       
       await ctx.reply(
         `✅ Email saved: ${email}\n\n` +
@@ -564,18 +581,24 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
       return true;
     }
     
+    // Handle phone collection
     if (session.action === 'collect_phone') {
       const phone = text.trim();
+      console.log(`📱 Processing phone: ${phone}`);
       
       if (!validatePhone(phone)) {
         await ctx.reply('❌ Invalid phone number. Please enter a valid Nigerian number (e.g., 08012345678):');
         return true;
       }
       
+      // Save phone
       user.phone = phone;
       await users.update(telegramId, { phone: phone });
+      console.log(`✅ Phone saved: ${phone}`);
       
+      // Clear the phone session
       sessionManager.clearSession(telegramId);
+      console.log('🗑️ Cleared phone session');
       
       await ctx.reply(
         `✅ *Registration Complete!*\n\n` +
@@ -595,10 +618,11 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
       return true;
     }
     
+    console.log('⚠️ No matching action found, returning false');
     return false;
     
   } catch (error) {
-    console.error('Text handler error:', error);
+    console.error('❌ Text handler error:', error);
     return false;
   }
 }
