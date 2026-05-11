@@ -828,7 +828,8 @@ async function setupMenuHandlers(bot) {
     await ctx.reply(`💰 \\*YOUR WALLET BALANCE\\*\n\n💵 Available: ${formatCurrency(user.wallet)}`, { parse_mode: 'MarkdownV2' });
   });
   
-  // ========== WORKING DEPOSIT FUNDS HANDLER ==========
+  // ========== FIXED: DEPOSIT FUNDS HANDLER ==========
+  // Uses depositFunds.sessionManager (not getSessions()) so text handler can find the session
   bot.hears('💳 Deposit Funds', async (ctx) => {
     const userId = ctx.from.id.toString();
     console.log(`🔥 DEPOSIT BUTTON CLICKED by user: ${userId}`);
@@ -846,27 +847,27 @@ async function setupMenuHandlers(bot) {
     const needsEmail = !user.email;
     const needsPhone = !user.phone;
     
-    if (needsEmail || needsPhone) {
-      let message = '⚠️ *Additional Information Required*\n\n';
-      if (needsEmail) message += '📧 Email address is required\n';
-      if (needsPhone) message += '📱 Phone number is required\n\n';
-      message += 'Please provide the following information:';
-      
-      if (needsEmail) {
-        await ctx.reply(message + '\n\nPlease enter your email address:', { parse_mode: 'Markdown' });
-        const sessions = getSessions();
-        sessions[userId] = { action: 'collect_email', step: 1 };
-        setSessions(sessions);
-        return;
-      } else if (needsPhone) {
-        await ctx.reply(message + '\n\nPlease enter your phone number:', { parse_mode: 'Markdown' });
-        const sessions = getSessions();
-        sessions[userId] = { action: 'collect_phone', step: 1 };
-        setSessions(sessions);
-        return;
-      }
+    if (needsEmail) {
+      // ✅ FIX: Store session in depositFunds.sessionManager, not getSessions()
+      depositFunds.sessionManager.startSession(userId, 'collect_email');
+      console.log(`📝 Started collect_email session for ${userId} in depositFunds.sessionManager`);
+      return ctx.reply(
+        '📧 *Email Required*\n\nPlease enter your email address (e.g. name@example.com):',
+        { parse_mode: 'Markdown' }
+      );
     }
     
+    if (needsPhone) {
+      // ✅ FIX: Store session in depositFunds.sessionManager, not getSessions()
+      depositFunds.sessionManager.startSession(userId, 'collect_phone');
+      console.log(`📝 Started collect_phone session for ${userId} in depositFunds.sessionManager`);
+      return ctx.reply(
+        `📱 *Phone Required*\n\nEmail: ${user.email}\n\nPlease enter your phone number (e.g. 08012345678):`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+    
+    // Both email and phone exist — show deposit options
     await ctx.reply(
       `🏦 *DEPOSIT FUNDS*\n\n` +
       `👤 *User ID:* \`${userId}\`\n` +
@@ -1535,6 +1536,81 @@ async function setupCallbackHandlers(bot) {
     console.log('🟢 contact_admin_direct callback triggered');
     await depositFunds.handleContactAdminDirect(ctx);
   });
+
+  bot.action('force_new_account', async (ctx) => {
+    console.log('🟢 force_new_account callback triggered');
+    await depositFunds.handleForceNewAccount(ctx, {
+      findById: async (id) => {
+        const users = getUsers();
+        return users[id] || null;
+      }
+    }, virtualAccounts, bot);
+  });
+
+  bot.action('retrieve_account', async (ctx) => {
+    console.log('🟢 retrieve_account callback triggered');
+    await depositFunds.handleRetrieveAccount(ctx, {
+      findById: async (id) => {
+        const users = getUsers();
+        return users[id] || null;
+      }
+    }, virtualAccounts, bot);
+  });
+
+  bot.action('cancel_deposit', async (ctx) => {
+    console.log('🟢 cancel_deposit callback triggered');
+    await depositFunds.handleCancelDeposit(ctx);
+  });
+
+  bot.action('change_email', async (ctx) => {
+    console.log('🟢 change_email callback triggered');
+    await depositFunds.handleChangeEmail(ctx, {
+      findById: async (id) => {
+        const users = getUsers();
+        return users[id] || null;
+      }
+    });
+  });
+
+  bot.action('check_balance', async (ctx) => {
+    console.log('🟢 check_balance callback triggered');
+    await depositFunds.handleCheckBalance(ctx, {
+      findById: async (id) => {
+        const users = getUsers();
+        return users[id] || null;
+      }
+    }, virtualAccounts);
+  });
+
+  bot.action('view_my_account', async (ctx) => {
+    console.log('🟢 view_my_account callback triggered');
+    await depositFunds.handleViewMyAccount(ctx, {
+      findById: async (id) => {
+        const users = getUsers();
+        return users[id] || null;
+      }
+    }, virtualAccounts);
+  });
+
+  bot.action('retry_deposit', async (ctx) => {
+    console.log('🟢 retry_deposit callback triggered');
+    // Re-trigger the deposit flow by simulating the hears handler
+    const userId = ctx.from.id.toString();
+    const user = await initUser(userId);
+    const { Markup } = require('telegraf');
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      `🏦 *DEPOSIT FUNDS*\n\n📧 *Email:* ${user.email || 'Not set'}\n📱 *Phone:* ${user.phone || 'Not set'}\n\n💡 Choose an option:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🏦 Get Virtual Account', 'create_virtual_account')],
+          [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+          [Markup.button.callback('🏠 Back to Menu', 'start')]
+        ])
+      }
+    );
+  });
   
   console.log('✅ All callbacks registered');
 }
@@ -1543,11 +1619,9 @@ async function setupWebhook(bot, webhookUrl) {
   try {
     console.log(`🌐 Setting up webhook: ${webhookUrl}`);
     
-    // First, delete any existing webhook to prevent conflicts
     await bot.telegram.deleteWebhook();
     console.log('✅ Deleted existing webhook');
     
-    // Then set the new webhook
     await bot.telegram.setWebhook(webhookUrl);
     
     const webhookInfo = await bot.telegram.getWebhookInfo();
@@ -1608,19 +1682,22 @@ async function launchBot(useWebhook = false) {
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
-    // Text handler - Check for deposit sessions FIRST
+    // ========== FIXED TEXT HANDLER ==========
+    // Reads from depositFunds.sessionManager (not getSessions()) to match where
+    // the 💳 Deposit Funds hears handler writes its sessions.
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       if (text.startsWith('/')) return;
       
-      // First, check if user has an active deposit session (email/phone collection)
       const userId = ctx.from.id.toString();
-      const sessions = getSessions();
-      const session = sessions[userId];
+
+      // ✅ FIX: Check depositFunds.sessionManager, NOT getSessions()
+      const depositSession = depositFunds.sessionManager.getSession(userId);
       
-      if (session && (session.action === 'collect_email' || session.action === 'collect_phone')) {
-        // This is a deposit-related text, handle it with depositFunds
+      if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
         console.log(`📝 Handling deposit text for user ${userId}: ${text}`);
+        console.log(`📊 Deposit session found:`, depositSession);
+        
         await depositFunds.handleDepositText(ctx, text, {
           findById: async (id) => {
             const users = getUsers();
@@ -1640,7 +1717,7 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
-      // Otherwise, use the regular text handler
+      // No deposit session — use regular text handler
       await handleTextMessage(ctx, text);
     });
     
@@ -1658,7 +1735,6 @@ async function launchBot(useWebhook = false) {
       }
     });
     
-    // Delete webhook first to prevent conflicts, then launch accordingly
     await botInstance.telegram.deleteWebhook();
     console.log('✅ Deleted existing webhook');
     
@@ -1667,7 +1743,6 @@ async function launchBot(useWebhook = false) {
       const webhookUrl = `${baseUrl}/webhook`;
       await setupWebhook(botInstance, webhookUrl);
     } else {
-      // Use polling mode - simpler and avoids conflicts
       await botInstance.launch();
       console.log('✅ Bot running in DEVELOPMENT mode with polling');
     }
