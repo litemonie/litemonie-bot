@@ -28,7 +28,9 @@ function getTransactionManagers() {
 const { 
   getUsers, 
   getTransactions,
-  recordTransaction  // Use the unified recording function
+  setUsers,
+  saveAllData,
+  recordTransaction
 } = require('../database');
 
 /* =====================================================
@@ -55,7 +57,7 @@ const CONFIG = {
   SUPPORTED_BANKS: ['9PSB', 'SAFEHAVEN', 'PROVIDUS', 'BANKLY', 'PALMPAY'],
   DEFAULT_BANK: 'PALMPAY',
   
-  TEST_MODE: !(BILLSTACK_SECRET_KEY || BILLSTACK_API_KEY) || NODE_ENV === 'development',
+  TEST_MODE: !(BILLSTACK_SECRET_KEY || BILLSTACK_API_KEY),
   TEST_VIRTUAL_ACCOUNT: {
     bank_name: 'PALMPAY BANK',
     account_number: `TEST${Date.now().toString().slice(-6)}`,
@@ -234,7 +236,7 @@ function validatePhone(phone) {
 }
 
 /* =====================================================
-   1️⃣ VIRTUAL ACCOUNT CREATION - UPDATED WITH DUPLICATION CHECK
+   1️⃣ VIRTUAL ACCOUNT CREATION - ENHANCED WITH RETRIEVAL LOGIC
 ===================================================== */
 async function createVirtualAccountForUser(user, virtualAccounts) {
   try {
@@ -244,44 +246,99 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     const existingAccount = await virtualAccounts.findByUserId(user.telegramId);
     
     if (existingAccount && existingAccount.is_active) {
-      console.log('✅ User already has active virtual account:', existingAccount.account_number);
+      console.log('✅ User already has active virtual account in database:', existingAccount.account_number);
+      return {
+        ...existingAccount,
+        note: 'Existing account retrieved from database'
+      };
+    }
+    
+    // SECOND: Try to retrieve account from Billstack by email
+    if (!CONFIG.TEST_MODE && CONFIG.BILLSTACK_TOKEN && user.email) {
+      console.log(`🔍 Searching for existing account on Billstack by email: ${user.email}`);
       
-      // If in test mode, return existing account
-      if (CONFIG.TEST_MODE) {
-        console.log('🧪 TEST MODE: Using existing account');
-        return {
-          ...existingAccount,
-          note: 'Existing account retrieved from database (Test Mode)'
-        };
+      try {
+        const reference = generateReference(user.telegramId);
+        
+        const searchResponse = await billstackClient.get(`/v2/thirdparty/virtual-account/${reference}`);
+        
+        if (searchResponse.data && searchResponse.data.status && searchResponse.data.data) {
+          const accountData = searchResponse.data.data;
+          const firstAccount = accountData.account?.[0] || accountData;
+          
+          console.log('✅ Found existing account on Billstack:', firstAccount.account_number);
+          
+          const retrievedAccount = {
+            bank_name: firstAccount.bank_name,
+            account_number: firstAccount.account_number,
+            account_name: firstAccount.account_name,
+            reference: firstAccount.reference || reference,
+            provider: 'billstack',
+            bank_code: firstAccount.bank_id || CONFIG.DEFAULT_BANK,
+            created_at: new Date(firstAccount.created_at || new Date()),
+            is_active: true,
+            note: 'Retrieved from Billstack'
+          };
+          
+          await virtualAccounts.create({
+            user_id: user.telegramId,
+            ...retrievedAccount
+          });
+          
+          console.log(`✅ Saved retrieved account to database for user ${user.telegramId}`);
+          return retrievedAccount;
+        }
+      } catch (lookupError) {
+        console.log('📝 No existing account found via reference lookup');
+        if (lookupError.response?.status !== 404) {
+          console.log('Lookup error:', lookupError.response?.data || lookupError.message);
+        }
       }
       
-      // Try to verify with Billstack API if we have credentials
-      if (CONFIG.BILLSTACK_TOKEN) {
-        try {
-          console.log('🔍 Verifying existing account with Billstack...');
-          // Note: You could add a Billstack API verification call here
-          // For example: billstackClient.get(`/accounts/${existingAccount.account_number}`)
-          // For now, we'll just log and return the existing account
-          console.log('✅ Existing account verified (using cached data)');
-          return {
-            ...existingAccount,
-            note: 'Existing active account retrieved from database'
-          };
-        } catch (verifyError) {
-          console.log('⚠️ Could not verify existing account:', verifyError.message);
-          // Continue to create a new one
+      try {
+        const listResponse = await billstackClient.get('/v2/thirdparty/virtual-accounts', {
+          params: { email: user.email, limit: 10 }
+        });
+        
+        if (listResponse.data && listResponse.data.status && listResponse.data.data) {
+          const accounts = listResponse.data.data;
+          if (accounts && accounts.length > 0) {
+            const foundAccount = accounts[0];
+            console.log('✅ Found existing account by email list:', foundAccount.account_number);
+            
+            const retrievedAccount = {
+              bank_name: foundAccount.bank_name,
+              account_number: foundAccount.account_number,
+              account_name: foundAccount.account_name,
+              reference: foundAccount.reference || generateReference(user.telegramId),
+              provider: 'billstack',
+              bank_code: foundAccount.bank_id || CONFIG.DEFAULT_BANK,
+              created_at: new Date(foundAccount.created_at || new Date()),
+              is_active: true,
+              note: 'Retrieved from Billstack list'
+            };
+            
+            await virtualAccounts.create({
+              user_id: user.telegramId,
+              ...retrievedAccount
+            });
+            
+            return retrievedAccount;
+          }
         }
-      } else {
-        console.log('✅ Using existing account from database');
-        return {
-          ...existingAccount,
-          note: 'Existing account retrieved from database'
-        };
+      } catch (listError) {
+        console.log('Could not list accounts, may not be supported');
       }
     }
     
-    // If no existing account or account is not active, create new one
-    console.log('🆕 No active virtual account found, creating new one...');
+    // THIRD: Wait a moment and retry creation
+    if (!CONFIG.TEST_MODE && CONFIG.BILLSTACK_TOKEN) {
+      console.log('⏳ Waiting 3 seconds before retrying account creation...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    
+    // FOURTH: Create new account
+    console.log('🆕 Creating new virtual account...');
     
     if (CONFIG.TEST_MODE) {
       console.log('🧪 TEST MODE: Creating test account');
@@ -308,7 +365,7 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
       bank: CONFIG.DEFAULT_BANK
     };
 
-    console.log('📤 Request data:', requestData);
+    console.log('📤 Creating new account with:', requestData);
 
     const response = await billstackClient.post(
       '/v2/thirdparty/generateVirtualAccount/',
@@ -318,6 +375,33 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
     console.log('📥 Response:', response.data);
 
     if (!response.data.status) {
+      if (response.data.message && response.data.message.includes('Multiple request')) {
+        console.log('⚠️ Multiple request error, waiting 5 seconds and retrying...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        const retryResponse = await billstackClient.post(
+          '/v2/thirdparty/generateVirtualAccount/',
+          requestData
+        );
+        
+        if (retryResponse.data && retryResponse.data.status) {
+          const accountData = retryResponse.data.data;
+          const firstAccount = accountData.account[0];
+          
+          console.log(`✅ Account created on retry: ${firstAccount.account_number}`);
+          
+          return {
+            bank_name: firstAccount.bank_name,
+            account_number: firstAccount.account_number,
+            account_name: firstAccount.account_name,
+            reference: reference,
+            provider: 'billstack',
+            bank_code: firstAccount.bank_id || CONFIG.DEFAULT_BANK,
+            created_at: new Date(firstAccount.created_at || new Date()),
+            is_active: true
+          };
+        }
+      }
       throw new Error(response.data.message || 'Failed to create account');
     }
 
@@ -328,7 +412,7 @@ async function createVirtualAccountForUser(user, virtualAccounts) {
 
     const firstAccount = accountData.account[0];
     
-    console.log(`✅ Account created successfully`);
+    console.log(`✅ Account created successfully: ${firstAccount.account_number}`);
 
     return {
       bank_name: firstAccount.bank_name,
@@ -413,6 +497,7 @@ async function handleDeposit(ctx, users, virtualAccounts) {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
             [Markup.button.callback('💳 Create Virtual Account', 'create_virtual_account')],
+            [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
           ])
@@ -436,7 +521,7 @@ async function handleDeposit(ctx, users, virtualAccounts) {
 }
 
 /* =====================================================
-   3️⃣ TEXT MESSAGE HANDLER
+   3️⃣ TEXT MESSAGE HANDLER - COMPLETELY FIXED
 ===================================================== */
 async function handleDepositText(ctx, text, users, virtualAccounts) {
   try {
@@ -444,27 +529,47 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
     const telegramId = ctx.from.id.toString();
     const session = sessionManager.getSession(telegramId);
     
-    if (!session) return false;
+    console.log(`📝 Handling deposit text for user ${telegramId}: ${text}`);
+    console.log(`📊 Current session:`, session);
+    
+    if (!session) {
+      console.log('❌ No session found, returning false');
+      return false;
+    }
     
     const user = await users.findById(telegramId);
-    if (!user) return false;
+    if (!user) {
+      console.log('❌ User not found');
+      return false;
+    }
     
+    // Handle email collection
     if (session.action === 'collect_email') {
       const email = text.trim();
+      console.log(`📧 Processing email: ${email}`);
       
       if (!validateEmail(email)) {
-        await ctx.reply('❌ Invalid email. Please enter a valid email:');
+        await ctx.reply('❌ Invalid email. Please enter a valid email (e.g., name@example.com):');
         return true;
       }
       
+      // Save email
       user.email = email;
       await users.update(telegramId, { email: email });
+      console.log(`✅ Email saved: ${email}`);
       
+      // Clear the email session
+      sessionManager.clearSession(telegramId);
+      console.log('🗑️ Cleared email session');
+      
+      // Start phone collection
       sessionManager.startSession(telegramId, 'collect_phone');
+      console.log('📝 Started phone collection session');
       
       await ctx.reply(
         `✅ Email saved: ${email}\n\n` +
-        `📱 Now enter your phone number:`,
+        `📱 *Phone Number Required*\n\n` +
+        `Please enter your phone number (e.g., 08012345678):`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -476,28 +581,35 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
       return true;
     }
     
+    // Handle phone collection
     if (session.action === 'collect_phone') {
       const phone = text.trim();
+      console.log(`📱 Processing phone: ${phone}`);
       
       if (!validatePhone(phone)) {
-        await ctx.reply('❌ Invalid phone. Please enter a valid Nigerian number:');
+        await ctx.reply('❌ Invalid phone number. Please enter a valid Nigerian number (e.g., 08012345678):');
         return true;
       }
       
+      // Save phone
       user.phone = phone;
       await users.update(telegramId, { phone: phone });
+      console.log(`✅ Phone saved: ${phone}`);
       
+      // Clear the phone session
       sessionManager.clearSession(telegramId);
+      console.log('🗑️ Cleared phone session');
       
       await ctx.reply(
         `✅ *Registration Complete!*\n\n` +
         `📧 Email: ${user.email}\n` +
         `📱 Phone: ${user.phone}\n\n` +
-        `Now create your virtual account:`,
+        `Now click the button below to create your virtual account:`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
             [Markup.button.callback('💳 Create Virtual Account', 'create_virtual_account')],
+            [Markup.button.callback('🔍 Retrieve Existing Account', 'retrieve_account')],
             [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
             [Markup.button.callback('🏠 Home', 'start')]
           ])
@@ -506,10 +618,11 @@ async function handleDepositText(ctx, text, users, virtualAccounts) {
       return true;
     }
     
+    console.log('⚠️ No matching action found, returning false');
     return false;
     
   } catch (error) {
-    console.error('Text handler error:', error);
+    console.error('❌ Text handler error:', error);
     return false;
   }
 }
@@ -526,10 +639,8 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
     
     console.log(`👤 User ${telegramId} clicked create_virtual_account`);
     
-    // First answer the callback query to remove loading state
     await ctx.answerCbQuery('⏳ Creating account...');
     
-    // Edit the message to show processing
     try {
       await ctx.editMessageText(
         `🔄 *Creating Virtual Account...*\n\n` +
@@ -537,7 +648,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         { parse_mode: 'Markdown' }
       );
     } catch (editError) {
-      // If edit fails, send a new message
       await ctx.reply(
         `🔄 *Creating Virtual Account...*\n\n` +
         `⏳ Please wait...`,
@@ -563,7 +673,8 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         `❌ Missing information.\n\n` +
         `Email: ${user.email ? '✅' : '❌'}\n` +
         `Phone: ${user.phone ? '✅' : '❌'}\n\n` +
-        `Please use /deposit again to set both.`
+        `Please use /deposit again to set both.`,
+        { parse_mode: 'Markdown' }
       );
       return;
     }
@@ -571,7 +682,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
     try {
       console.log('🚀 Starting virtual account creation...');
       
-      // Check if user already has an account first
       const existingAccount = await virtualAccounts.findByUserId(telegramId);
       
       if (existingAccount && existingAccount.is_active) {
@@ -617,7 +727,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         return;
       }
       
-      // If no existing account, create new one
       const newAccount = await createVirtualAccountForUser({
         telegramId: user.telegramId,
         email: user.email,
@@ -633,7 +742,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         ...newAccount
       });
       
-      // ===== RECORD VIRTUAL ACCOUNT CREATION TRANSACTION =====
       try {
         const { recordTransaction } = require('../database');
         if (typeof recordTransaction === 'function') {
@@ -696,7 +804,6 @@ async function handleCreateVirtualAccount(ctx, users, virtualAccounts, bot) {
         });
       }
       
-      // Send reminder
       setTimeout(async () => {
         try {
           await bot.telegram.sendMessage(
@@ -781,14 +888,12 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
       return;
     }
     
-    // Deactivate old account if exists
     const oldAccount = await virtualAccounts.findByUserId(telegramId);
     if (oldAccount) {
       await virtualAccounts.update(oldAccount.id, { is_active: false });
       console.log(`🗑️ Deactivated old account: ${oldAccount.account_number}`);
     }
     
-    // Create new account
     const newAccount = await createVirtualAccountForUser({
       telegramId: user.telegramId,
       email: user.email,
@@ -803,7 +908,6 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
       ...newAccount
     });
     
-    // ===== RECORD NEW VIRTUAL ACCOUNT CREATION =====
     try {
       const { recordTransaction } = require('../database');
       if (typeof recordTransaction === 'function') {
@@ -863,6 +967,262 @@ async function handleForceNewAccount(ctx, users, virtualAccounts, bot) {
     
   } catch (error) {
     console.error('❌ Force new account error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
+// ========== RETRIEVE EXISTING ACCOUNT HANDLER ==========
+async function handleRetrieveAccount(ctx, users, virtualAccounts, bot) {
+  console.log('🟢 CALLBACK TRIGGERED: retrieve_account');
+  
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    
+    await ctx.answerCbQuery('🔍 Retrieving account...');
+    
+    await ctx.editMessageText(
+      `🔍 *Retrieving Virtual Account...*\n\n` +
+      `Please wait while we fetch your existing account from Billstack...`,
+      { parse_mode: 'Markdown' }
+    );
+    
+    const user = await users.findById(telegramId);
+    if (!user) {
+      await ctx.reply('❌ User not found. Please /start first.');
+      return;
+    }
+    
+    if (!user.email || !user.phone) {
+      await ctx.reply(
+        `❌ Missing information.\n\n` +
+        `Email: ${user.email ? '✅' : '❌'}\n` +
+        `Phone: ${user.phone ? '✅' : '❌'}\n\n` +
+        `Please use /deposit to set your email and phone first.`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+    
+    try {
+      console.log('🔍 Attempting to retrieve existing account from Billstack...');
+      
+      let retrievedAccount = null;
+      const reference = generateReference(user.telegramId);
+      
+      // Try to get by reference
+      try {
+        const response = await billstackClient.get(`/v2/thirdparty/virtual-account/${reference}`);
+        if (response.data && response.data.status && response.data.data) {
+          const accountData = response.data.data;
+          retrievedAccount = accountData.account?.[0] || accountData;
+          console.log('✅ Account retrieved by reference');
+        }
+      } catch (refError) {
+        console.log('Reference lookup failed:', refError.response?.status);
+      }
+      
+      if (retrievedAccount) {
+        console.log('✅ Found existing account:', retrievedAccount.account_number);
+        
+        const accountToSave = {
+          bank_name: retrievedAccount.bank_name,
+          account_number: retrievedAccount.account_number,
+          account_name: retrievedAccount.account_name,
+          reference: retrievedAccount.reference || reference,
+          provider: 'billstack',
+          bank_code: retrievedAccount.bank_id || CONFIG.DEFAULT_BANK,
+          created_at: new Date(retrievedAccount.created_at || new Date()),
+          is_active: true,
+          note: 'Retrieved via retrieve button'
+        };
+        
+        await virtualAccounts.create({
+          user_id: telegramId,
+          ...accountToSave
+        });
+        
+        let message = `✅ *Virtual Account Retrieved!*\n\n`;
+        message += `🏦 *Bank:* ${accountToSave.bank_name}\n`;
+        message += `🔢 *Account Number:* \`${accountToSave.account_number}\`\n`;
+        message += `👤 *Account Name:* ${accountToSave.account_name}\n\n`;
+        message += `💰 *How to Deposit:*\n`;
+        message += `1. Transfer to the account above\n`;
+        message += `2. Use any bank app\n`;
+        message += `3. Minimum: ₦100\n\n`;
+        message += `💡 Funds will be auto-credited within 1-5 minutes!\n\n`;
+        message += `📞 *Support:* @opuenekeke`;
+        
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        });
+        
+      } else {
+        await ctx.editMessageText(
+          `❌ *No Existing Account Found*\n\n` +
+          `We couldn't find an existing virtual account for your email.\n\n` +
+          `💡 Would you like to create a new account instead?`,
+          {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+              [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+              [Markup.button.callback('🏠 Home', 'start')]
+            ])
+          }
+        );
+      }
+      
+    } catch (error) {
+      console.error('❌ Account retrieval error:', error);
+      
+      await ctx.editMessageText(
+        `❌ *Account Retrieval Failed*\n\n` +
+        `${error.message}\n\n` +
+        `💡 *What to do:*\n` +
+        `1. Contact support @opuenekeke\n` +
+        `2. Try manual deposit option\n` +
+        `3. Try creating a new account`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💳 Try Create Account', 'create_virtual_account')],
+            [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+            [Markup.button.callback('📞 Contact Admin', 'contact_admin_direct')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+    }
+    
+  } catch (error) {
+    console.error('❌ Retrieve account error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
+// ========== RESTORE FROM BACKUP HANDLER ==========
+async function handleRestoreFromBackup(ctx, users, virtualAccounts, bot) {
+  console.log('🟢 CALLBACK TRIGGERED: restore_from_backup');
+  
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    
+    await ctx.answerCbQuery('💾 Searching backup...');
+    
+    await ctx.editMessageText(
+      `💾 *Restoring from Backup...*\n\n` +
+      `Searching for your account in our backup system...`,
+      { parse_mode: 'Markdown' }
+    );
+    
+    // Try to load from backup
+    let backupData = null;
+    try {
+      const { loadFromBackup } = require('../database');
+      backupData = await loadFromBackup();
+    } catch (backupError) {
+      console.log('Backup module not available, using local method');
+      // Fallback: try to read from backups folder
+      const fs = require('fs');
+      const path = require('path');
+      const backupPath = path.join(__dirname, '../backups/users_backup.json');
+      if (fs.existsSync(backupPath)) {
+        backupData = { users: JSON.parse(fs.readFileSync(backupPath, 'utf8')) };
+      }
+    }
+    
+    if (backupData && backupData.users && backupData.users[telegramId]) {
+      const userData = backupData.users[telegramId];
+      let virtualAccount = null;
+      
+      if (backupData.virtualAccounts) {
+        virtualAccount = Object.values(backupData.virtualAccounts).find(va => va.user_id === telegramId);
+      }
+      
+      // Restore user data to current database
+      const currentUsers = getUsers();
+      currentUsers[telegramId] = {
+        ...currentUsers[telegramId],
+        wallet: userData.wallet || 0,
+        email: userData.email,
+        phone: userData.phone,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        pin: userData.pin,
+        kycStatus: userData.kycStatus || 'pending'
+      };
+      setUsers(currentUsers);
+      
+      // Restore virtual account if exists in backup
+      if (virtualAccount && !(await virtualAccounts.findByUserId(telegramId))) {
+        await virtualAccounts.create({
+          user_id: telegramId,
+          account_number: virtualAccount.account_number,
+          bank_name: virtualAccount.bank_name,
+          account_name: virtualAccount.account_name,
+          bank_code: virtualAccount.bank_code,
+          reference: virtualAccount.reference,
+          provider: virtualAccount.provider,
+          is_active: true
+        });
+      }
+      
+      await saveAllData();
+      
+      await ctx.editMessageText(
+        `✅ *Account Restored from Backup!*\n\n` +
+        `💰 *Balance:* ₦${(userData.wallet || 0).toLocaleString()}\n` +
+        `📧 *Email:* ${userData.email || 'Not set'}\n` +
+        `📱 *Phone:* ${userData.phone || 'Not set'}\n` +
+        `🔐 *PIN:* ${userData.pin ? '✅ Set' : '❌ Not set'}\n\n` +
+        `${virtualAccount ? `🏦 *Virtual Account:* ${virtualAccount.account_number}\n` : ''}\n` +
+        `Your account has been successfully restored from the last backup!`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💰 Check Balance', 'check_balance')],
+            [Markup.button.callback('🏦 View Account', 'view_my_account')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+    } else {
+      await ctx.editMessageText(
+        `❌ *No Backup Found*\n\n` +
+        `No backup data found for your account.\n\n` +
+        `💡 *What you can do:*\n` +
+        `1. Create a new virtual account\n` +
+        `2. Use manual deposit option\n` +
+        `3. Contact support @opuenekeke for assistance`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💳 Create New Account', 'create_virtual_account')],
+            [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+            [Markup.button.callback('📞 Contact Admin', 'contact_admin_direct')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+    }
+  } catch (error) {
+    console.error('❌ Restore from backup error:', error);
+    await ctx.editMessageText(
+      `❌ *Restore Failed*\n\n` +
+      `Error: ${error.message}\n\n` +
+      `Please contact support @opuenekeke for assistance.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🏠 Home', 'start')]
+        ])
+      }
+    );
     await ctx.answerCbQuery('❌ Error');
   }
 }
@@ -938,6 +1298,79 @@ async function handleChangeEmail(ctx, users) {
   }
 }
 
+async function handleCheckBalance(ctx, users, virtualAccounts) {
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    const user = await users.findById(telegramId);
+    
+    if (!user) {
+      await ctx.reply('❌ User not found. Please /start first.');
+      return;
+    }
+    
+    await ctx.editMessageText(
+      `💰 *Your Balance*\n\n` +
+      `💵 Available: ₦${(user.wallet || 0).toLocaleString()}\n\n` +
+      `Use /deposit to add funds.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🏦 Deposit', 'create_virtual_account')],
+          [Markup.button.callback('🏠 Home', 'start')]
+        ])
+      }
+    );
+  } catch (error) {
+    console.error('Check balance error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
+async function handleViewMyAccount(ctx, users, virtualAccounts) {
+  try {
+    const { Markup } = require('telegraf');
+    const telegramId = ctx.from.id.toString();
+    const user = await users.findById(telegramId);
+    const virtualAccount = await virtualAccounts.findByUserId(telegramId);
+    
+    if (!virtualAccount) {
+      await ctx.editMessageText(
+        `❌ *No Virtual Account Found*\n\n` +
+        `Click below to create one:`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💳 Create Account', 'create_virtual_account')],
+            [Markup.button.callback('📋 Manual Deposit', 'manual_deposit')],
+            [Markup.button.callback('🏠 Home', 'start')]
+          ])
+        }
+      );
+      return;
+    }
+    
+    await ctx.editMessageText(
+      `💰 *Your Virtual Account*\n\n` +
+      `🏦 *Bank:* ${virtualAccount.bank_name}\n` +
+      `🔢 *Account Number:* \`${virtualAccount.account_number}\`\n` +
+      `👤 *Name:* ${virtualAccount.account_name}\n` +
+      `💵 *Balance:* ₦${(user.wallet || 0).toLocaleString()}\n\n` +
+      `💡 Transfer to this account to deposit funds.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔄 Get New Account', 'force_new_account')],
+          [Markup.button.callback('🏠 Home', 'start')]
+        ])
+      }
+    );
+  } catch (error) {
+    console.error('View my account error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+}
+
 async function handleContactAdminDirect(ctx) {
   try {
     const { Markup } = require('telegraf');
@@ -958,93 +1391,120 @@ async function handleContactAdminDirect(ctx) {
 }
 
 /* =====================================================
-   5️⃣ WEBHOOK HANDLER WITH TRANSACTION TRACKING
+   5️⃣ WEBHOOK HANDLER WITH TRANSACTION TRACKING - FIXED VERSION
 ===================================================== */
 function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
   return async (req, res) => {
-    console.log('📥 Webhook received');
+    console.log('📥 Billstack webhook received');
     
     try {
       const payload = req.body;
-      console.log('Webhook payload:', JSON.stringify(payload, null, 2));
+      console.log('📦 Webhook payload:', JSON.stringify(payload, null, 2));
       
-      // Verify webhook signature if secret is set
-      if (CONFIG.BILLSTACK_WEBHOOK_SECRET) {
-        const signature = req.headers['x-billstack-signature'];
-        // Add signature verification here if needed
-      }
-      
-      // Check if this is a deposit notification
-      if (payload.event === 'deposit.successful' || payload.type === 'deposit') {
-        const { 
-          account_number, 
-          amount, 
-          reference,
-          transaction_reference,
-          status,
-          metadata
-        } = payload.data || payload;
+      if (payload.event === 'PAYMENT_NOTIFICATION' && payload.data?.type === 'RESERVED_ACCOUNT_TRANSACTION') {
+        const paymentData = payload.data;
+        const amount = parseFloat(paymentData.amount);
+        const transactionRef = paymentData.transaction_ref || paymentData.reference;
+        const accountNumber = paymentData.account?.account_number;
         
-        console.log(`💰 Deposit received: ₦${amount} to account ${account_number}`);
+        console.log(`💰 Deposit received: ₦${amount}`);
+        console.log(`🏦 Account number: ${accountNumber}`);
+        console.log(`🔖 Reference: ${transactionRef}`);
         
-        // Find user by virtual account number
-        const virtualAccount = await virtualAccounts.findByAccountNumber(account_number);
+        let userId = null;
+        let user = null;
         
-        if (virtualAccount) {
-          const userId = virtualAccount.user_id;
-          const user = await users.findById(userId);
+        const allUsers = getUsers();
+        console.log(`📊 Total users: ${Object.keys(allUsers).length}`);
+        
+        if (virtualAccounts && virtualAccounts.findByAccountNumber) {
+          const virtualAccount = await virtualAccounts.findByAccountNumber(accountNumber);
+          if (virtualAccount && virtualAccount.user_id) {
+            userId = virtualAccount.user_id;
+            user = allUsers[userId];
+            console.log(`✅ User found by account number: ${userId}`);
+          }
+        }
+        
+        if (!user && paymentData.customer?.email) {
+          const customerEmail = paymentData.customer.email;
+          console.log(`📧 Looking for email: ${customerEmail}`);
           
-          if (user) {
-            // Credit user's wallet
-            const oldBalance = user.wallet || 0;
-            user.wallet = oldBalance + parseFloat(amount);
-            await users.update(userId, { wallet: user.wallet });
-            
-            console.log(`✅ Credited ₦${amount} to user ${userId}. New balance: ₦${user.wallet}`);
-            
-            // ===== RECORD DEPOSIT TRANSACTION =====
-            const depositRef = transaction_reference || reference || `DEP${Date.now()}`;
-            
-            try {
-              const { recordTransaction } = require('../database');
-              if (typeof recordTransaction === 'function') {
-                await recordTransaction(userId, {
-                  id: depositRef,
-                  type: 'deposit',
-                  amount: parseFloat(amount),
-                  status: 'completed',
-                  description: `Wallet deposit via virtual account`,
-                  category: 'deposit',
-                  reference: depositRef,
-                  metadata: {
-                    account_number,
-                    bank_name: virtualAccount.bank_name,
-                    webhook_payload: payload
-                  }
-                });
-                console.log(`✅ Deposit transaction recorded: ${depositRef}`);
-              }
-            } catch (dbError) {
-              console.warn('⚠️ Could not record deposit:', dbError.message);
-            }
-            
-            // Notify user
-            try {
-              await bot.telegram.sendMessage(
-                userId,
-                `💰 *Deposit Received!*\n\n` +
-                `Amount: ₦${amount.toLocaleString()}\n` +
-                `New Balance: ₦${user.wallet.toLocaleString()}\n` +
-                `Reference: \`${depositRef}\`\n\n` +
-                `Thank you for using our service!`,
-                { parse_mode: 'Markdown' }
-              );
-            } catch (notifyError) {
-              console.error('Failed to notify user:', notifyError.message);
+          for (const [id, userData] of Object.entries(allUsers)) {
+            if (userData.email === customerEmail) {
+              userId = id;
+              user = userData;
+              console.log(`✅ User found by email: ${userId}`);
+              break;
             }
           }
+        }
+        
+        if (!user && paymentData.merchant_reference) {
+          const merchantRef = paymentData.merchant_reference;
+          console.log(`🔍 Checking merchant reference: ${merchantRef}`);
+          
+          const match = merchantRef.match(/VTU-(\d+)-/);
+          if (match && match[1]) {
+            userId = match[1];
+            user = allUsers[userId];
+            if (user) {
+              console.log(`✅ User found by merchant reference: ${userId}`);
+            }
+          }
+        }
+        
+        if (user && userId) {
+          const oldBalance = user.wallet || 0;
+          const newBalance = oldBalance + amount;
+          
+          user.wallet = newBalance;
+          const allUsersUpdated = getUsers();
+          allUsersUpdated[userId] = user;
+          setUsers(allUsersUpdated);
+          await saveAllData();
+          
+          console.log(`✅✅✅ SUCCESS: Credited ₦${amount} to user ${userId}`);
+          console.log(`   Balance: ₦${oldBalance} → ₦${newBalance}`);
+          
+          try {
+            await recordTransaction(userId, {
+              type: 'deposit',
+              amount: amount,
+              status: 'completed',
+              description: `Wallet deposit via virtual account`,
+              reference: transactionRef,
+              metadata: { account_number: accountNumber }
+            });
+            console.log(`✅ Transaction recorded`);
+          } catch (err) {
+            console.warn('Transaction record error:', err.message);
+          }
+          
+          try {
+            await bot.telegram.sendMessage(
+              userId,
+              `💰 *DEPOSIT SUCCESSFUL!*\n\n` +
+              `Amount: ₦${amount.toLocaleString()}\n` +
+              `Reference: \`${transactionRef}\`\n\n` +
+              `New Balance: ₦${newBalance.toLocaleString()}\n\n` +
+              `Thank you for using Liteway!`,
+              { parse_mode: 'Markdown' }
+            );
+            console.log(`✅ Telegram notification sent to ${userId}`);
+          } catch (notifyErr) {
+            console.error('Notification error:', notifyErr.message);
+          }
         } else {
-          console.log(`⚠️ No user found for account number: ${account_number}`);
+          console.log(`❌❌❌ CRITICAL: Could not find user for deposit!`);
+          console.log(`   Account: ${accountNumber}`);
+          console.log(`   Email: ${paymentData.customer?.email}`);
+          console.log(`   Merchant Ref: ${paymentData.merchant_reference}`);
+          
+          console.log('📋 Registered users:');
+          for (const [id, u] of Object.entries(allUsers)) {
+            console.log(`   - ${id}: ${u.firstName || '?'} | Email: ${u.email || '?'}`);
+          }
         }
       }
       
@@ -1052,7 +1512,7 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
       
     } catch (error) {
       console.error('❌ Webhook error:', error);
-      res.status(500).json({ error: error.message });
+      res.status(200).json({ status: 'received' });
     }
   };
 }
@@ -1063,7 +1523,6 @@ function handleBillstackWebhook(bot, users, transactions, virtualAccounts) {
 function setupDepositHandlers(bot, users, virtualAccounts) {
   console.log('\n📋 SETTING UP DEPOSIT CALLBACK HANDLERS...');
   
-  // Register all callback handlers
   bot.action('create_virtual_account', (ctx) => {
     console.log('🟢 create_virtual_account callback triggered');
     return handleCreateVirtualAccount(ctx, users, virtualAccounts, bot);
@@ -1077,6 +1536,16 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
   bot.action('manual_deposit', (ctx) => {
     console.log('🟢 manual_deposit callback triggered');
     return handleManualDeposit(ctx);
+  });
+  
+  bot.action('retrieve_account', (ctx) => {
+    console.log('🟢 retrieve_account callback triggered');
+    return handleRetrieveAccount(ctx, users, virtualAccounts, bot);
+  });
+  
+  bot.action('restore_from_backup', (ctx) => {
+    console.log('🟢 restore_from_backup callback triggered');
+    return handleRestoreFromBackup(ctx, users, virtualAccounts, bot);
   });
   
   bot.action('cancel_deposit', (ctx) => {
@@ -1094,6 +1563,16 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
     return handleContactAdminDirect(ctx);
   });
   
+  bot.action('check_balance', (ctx) => {
+    console.log('🟢 check_balance callback triggered');
+    return handleCheckBalance(ctx, users, virtualAccounts);
+  });
+  
+  bot.action('view_my_account', (ctx) => {
+    console.log('🟢 view_my_account callback triggered');
+    return handleViewMyAccount(ctx, users, virtualAccounts);
+  });
+  
   bot.action('retry_deposit', (ctx) => {
     console.log('🟢 retry_deposit callback triggered');
     return handleDeposit(ctx, users, virtualAccounts);
@@ -1106,31 +1585,22 @@ function setupDepositHandlers(bot, users, virtualAccounts) {
    7️⃣ EXPORTS
 ===================================================== */
 module.exports = {
-  // Main handlers
   handleDeposit,
   handleDepositText,
-  
-  // Session manager
   sessionManager,
-  
-  // Virtual account function - Updated to accept virtualAccounts parameter
   createVirtualAccountForUser,
-  
-  // Callback handlers (for registration)
   handleCreateVirtualAccount,
   handleForceNewAccount,
+  handleRetrieveAccount,
+  handleRestoreFromBackup,
   handleManualDeposit,
   handleCancelDeposit,
   handleChangeEmail,
   handleContactAdminDirect,
-  
-  // Setup function
+  handleCheckBalance,
+  handleViewMyAccount,
   setupDepositHandlers,
-  
-  // Webhook handler with transaction tracking
   handleBillstackWebhook,
-  
-  // Utility functions
   generateReference,
   validateEmail,
   validatePhone,
