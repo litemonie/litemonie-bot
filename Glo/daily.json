@@ -2,36 +2,55 @@
   {
     "id": "20",
     "data": "750MB",
-    "category": "awoof",
     "validity": "1 Day",
-    "price": "295"
+    "price": "195"
   },
   {
     "id": "126",
     "data": "1.5GB",
-    "category": "awoof",
     "validity": "1 Day",
-    "price": "395"
+    "price": "295"
   },
   {
     "id": "127",
     "data": "2.5GB",
-    "category": "awoof",
     "validity": "2 Days",
-    "price": "595"
+    "price": "495"
   },
   {
     "id": "21",
     "data": "1GB",
-    "category": "corporate2",
     "validity": "3 Days",
-    "price": "385"
+    "price": "285"
+  },
+  {
+    "id": "447",
+    "data": "1GB",
+    "validity": "3 Days",
+    "price": "285"
+  },
+  {
+    "id": "448",
+    "data": "3GB",
+    "validity": "3 Days",
+    "price": "850"
   },
   {
     "id": "449",
     "data": "5GB",
-    "category": "corporate2",
     "validity": "3 Days",
-    "price": "1500"
+    "price": "1400"
+  },
+  {
+    "id": "153",
+    "data": "125MB inclusive 5MB Night",
+    "validity": "1 Day",
+    "price": "98.50"
+  },
+  {
+    "id": "154",
+    "data": "275MB inclusive 25MB Night",
+    "validity": "2 Days",
+    "price": "197"
   }
 ]
