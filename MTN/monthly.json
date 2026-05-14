@@ -1,32 +1,110 @@
 [
   {
-    "id": "304",
-    "data": "500MB",
+    "id": "4",
+    "data": "2.7GB",
     "validity": "30 Days",
-    "price": "470"
+    "price": "2000"
   },
   {
-    "id": "457",
-    "data": "1GB",
+    "id": "6",
+    "data": "10GB",
     "validity": "30 Days",
-    "price": "700"
+    "price": "4500"
   },
   {
     "id": "122",
     "data": "2GB",
     "validity": "30 Days",
-    "price": "1460"
+    "price": "1000"
   },
   {
     "id": "123",
     "data": "3GB",
     "validity": "30 Days",
-    "price": "1900"
+    "price": "1400"
   },
   {
     "id": "124",
     "data": "5GB",
     "validity": "30 Days",
+    "price": "1800"
+  },
+  {
+    "id": "178",
+    "data": "12.5GB",
+    "validity": "30 Days",
+    "price": "5500"
+  },
+  {
+    "id": "247",
+    "data": "16.5GB + 10mins",
+    "validity": "30 Days",
+    "price": "6500"
+  },
+  {
+    "id": "248",
+    "data": "20GB",
+    "validity": "30 Days",
+    "price": "7500"
+  },
+  {
+    "id": "249",
+    "data": "25GB",
+    "validity": "30 Days",
+    "price": "9000"
+  },
+  {
+    "id": "250",
+    "data": "36GB",
+    "validity": "30 Days",
+    "price": "11000"
+  },
+  {
+    "id": "251",
+    "data": "75GB",
+    "validity": "30 Days",
+    "price": "18000"
+  },
+  {
+    "id": "262",
+    "data": "165GB",
+    "validity": "30 Days",
+    "price": "35000"
+  },
+  {
+    "id": "265",
+    "data": "12.5GB",
+    "validity": "30 Days",
+    "price": "5500"
+  },
+  {
+    "id": "299",
+    "data": "150GB 2-Month Plan",
+    "validity": "60 Days",
+    "price": "39400"
+  },
+  {
+    "id": "301",
+    "data": "480GB 3-Month Plan",
+    "validity": "90 Days",
+    "price": "88800"
+  },
+  {
+    "id": "304",
+    "data": "500MB",
+    "validity": "30 Days",
+    "price": "320"
+  },
+  {
+    "id": "444",
+    "data": "7GB",
+    "validity": "30 Days",
     "price": "3500"
+  },
+  {
+    "id": "457",
+    "data": "1GB",
+    "validity": "30 Days",
+    "price": "500"
   }
 ]
