@@ -1,0 +1,62 @@
+[
+  {
+    "id": "1",
+    "data": "500MB",
+    "validity": "1 Day",
+    "price": "390"
+  },
+  {
+    "id": "173",
+    "data": "110MB",
+    "validity": "1 Day",
+    "price": "100"
+  },
+  {
+    "id": "174",
+    "data": "230MB",
+    "validity": "1 Day",
+    "price": "200"
+  },
+  {
+    "id": "176",
+    "data": "2.5GB",
+    "validity": "2 Days",
+    "price": "900"
+  },
+  {
+    "id": "244",
+    "data": "1GB + 1.5mins",
+    "validity": "1 Day",
+    "price": "500"
+  },
+  {
+    "id": "245",
+    "data": "1.5GB",
+    "validity": "2 Days",
+    "price": "600"
+  },
+  {
+    "id": "246",
+    "data": "3.2GB",
+    "validity": "2 Days",
+    "price": "1000"
+  },
+  {
+    "id": "264",
+    "data": "2GB",
+    "validity": "2 Days",
+    "price": "750"
+  },
+  {
+    "id": "462",
+    "data": "2.5GB",
+    "validity": "1 Day",
+    "price": "740"
+  },
+  {
+    "id": "503",
+    "data": "1GB",
+    "validity": "1 Day",
+    "price": "275"
+  }
+]
