@@ -2,50 +2,109 @@
   {
     "id": "30",
     "data": "2GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "1585"
+    "price": "1485"
   },
   {
     "id": "32",
     "data": "6GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "3070"
+    "price": "2970"
   },
   {
     "id": "33",
     "data": "10GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "4060"
+    "price": "3960"
+  },
+  {
+    "id": "82",
+    "data": "18GB",
+    "validity": "30 Days",
+    "price": "5940"
+  },
+  {
+    "id": "83",
+    "data": "25GB",
+    "validity": "30 Days",
+    "price": "7920"
   },
   {
     "id": "118",
     "data": "10GB",
-    "category": "sme",
     "validity": "30 Days",
-    "price": "3300"
+    "price": "3200"
   },
   {
     "id": "206",
     "data": "4GB",
-    "category": "gifting",
     "validity": "30 Days",
-    "price": "2600"
+    "price": "2500"
   },
   {
     "id": "207",
-    "data": "6GB",
-    "category": "gifting",
+    "data": "8GB",
     "validity": "30 Days",
-    "price": "3100"
+    "price": "3000"
   },
   {
     "id": "208",
     "data": "10GB",
-    "category": "gifting",
     "validity": "30 Days",
-    "price": "4100"
+    "price": "4000"
+  },
+  {
+    "id": "209",
+    "data": "13GB",
+    "validity": "30 Days",
+    "price": "5000"
+  },
+  {
+    "id": "260",
+    "data": "35GB",
+    "validity": "30 Days",
+    "price": "9880"
+  },
+  {
+    "id": "306",
+    "data": "2GB",
+    "validity": "30 Days",
+    "price": "1500"
+  },
+  {
+    "id": "307",
+    "data": "3GB",
+    "validity": "30 Days",
+    "price": "2000"
+  },
+  {
+    "id": "311",
+    "data": "18GB",
+    "validity": "30 Days",
+    "price": "6000"
+  },
+  {
+    "id": "312",
+    "data": "25GB",
+    "validity": "30 Days",
+    "price": "8000"
+  },
+  {
+    "id": "313",
+    "data": "35GB",
+    "validity": "30 Days",
+    "price": "10000"
+  },
+  {
+    "id": "314",
+    "data": "60GB",
+    "validity": "30 Days",
+    "price": "15000"
+  },
+  {
+    "id": "315",
+    "data": "100GB",
+    "validity": "30 Days",
+    "price": "20000"
   }
 ]
