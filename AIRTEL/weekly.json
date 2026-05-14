@@ -2,50 +2,67 @@
   {
     "id": "28",
     "data": "500MB",
-    "category": "corporate",
     "validity": "7 Days",
-    "price": "595"
+    "price": "495"
   },
   {
     "id": "29",
     "data": "1GB",
-    "category": "corporate",
     "validity": "7 Days",
-    "price": "892"
-  },
-  {
-    "id": "117",
-    "data": "7GB",
-    "category": "sme",
-    "validity": "7 Days",
-    "price": "2200"
-  },
-  {
-    "id": "461",
-    "data": "6.5GB",
-    "category": "sme",
-    "validity": "7 Days",
-    "price": "1100"
+    "price": "792"
   },
   {
     "id": "203",
     "data": "500MB",
-    "category": "gifting",
     "validity": "7 Days",
-    "price": "600"
+    "price": "500"
   },
   {
     "id": "204",
     "data": "1.5GB",
-    "category": "gifting",
     "validity": "7 Days",
-    "price": "1100"
+    "price": "1000"
   },
   {
     "id": "205",
-    "data": "3GB",
-    "category": "gifting",
+    "data": "3.5GB",
+    "validity": "7 Days",
+    "price": "1500"
+  },
+  {
+    "id": "305",
+    "data": "1GB",
+    "validity": "7 Days",
+    "price": "800"
+  },
+  {
+    "id": "308",
+    "data": "6GB",
+    "validity": "7 Days",
+    "price": "2500"
+  },
+  {
+    "id": "309",
+    "data": "10GB",
+    "validity": "7 Days",
+    "price": "3000"
+  },
+  {
+    "id": "310",
+    "data": "18GB",
+    "validity": "7 Days",
+    "price": "5000"
+  },
+  {
+    "id": "500",
+    "data": "3.5GB",
     "validity": "7 Days",
     "price": "1600"
+  },
+  {
+    "id": "501",
+    "data": "5GB",
+    "validity": "7 Days",
+    "price": "2580"
   }
 ]
