@@ -2,43 +2,97 @@
   {
     "id": "22",
     "data": "500MB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "315"
+    "price": "210"
   },
   {
     "id": "23",
     "data": "1GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "530"
+    "price": "420"
   },
   {
     "id": "24",
     "data": "2GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "960"
+    "price": "840"
   },
   {
     "id": "25",
     "data": "3GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "1390"
+    "price": "1260"
   },
   {
     "id": "26",
     "data": "5GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "2250"
+    "price": "2100"
   },
   {
     "id": "27",
     "data": "10GB",
-    "category": "corporate",
     "validity": "30 Days",
-    "price": "4400"
+    "price": "4200"
+  },
+  {
+    "id": "156",
+    "data": "2.6GB inclusive 1.5GB Night",
+    "validity": "30 Days",
+    "price": "985"
+  },
+  {
+    "id": "157",
+    "data": "5.2GB inclusive 3GB Night",
+    "validity": "30 Days",
+    "price": "1477.50"
+  },
+  {
+    "id": "158",
+    "data": "7.25GB inclusive 3GB Night",
+    "validity": "30 Days",
+    "price": "2462.50"
+  },
+  {
+    "id": "159",
+    "data": "10.5GB inclusive 2GB Night",
+    "validity": "30 Days",
+    "price": "2955"
+  },
+  {
+    "id": "160",
+    "data": "12.5GB inclusive 2GB Night",
+    "validity": "30 Days",
+    "price": "3940"
+  },
+  {
+    "id": "161",
+    "data": "16.5GB inclusive 2.5GB Night",
+    "validity": "30 Days",
+    "price": "4925"
+  },
+  {
+    "id": "162",
+    "data": "26GB inclusive 2GB Night",
+    "validity": "30 Days",
+    "price": "7880"
+  },
+  {
+    "id": "163",
+    "data": "42GB inclusive 4GB Night",
+    "validity": "30 Days",
+    "price": "9850"
+  },
+  {
+    "id": "164",
+    "data": "64GB inclusive 2GB Night",
+    "validity": "30 Days",
+    "price": "14775"
+  },
+  {
+    "id": "166",
+    "data": "107GB inclusive 2GB Night",
+    "validity": "30 Days",
+    "price": "19700"
   }
 ]
