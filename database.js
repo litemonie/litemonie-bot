@@ -172,16 +172,41 @@ async function initStorage() {
 
 async function loadData() {
   try {
-    users = JSON.parse(await fs.readFile(usersFile, 'utf8'));
-    transactions = JSON.parse(await fs.readFile(transactionsFile, 'utf8'));
-    virtualAccountsData = JSON.parse(await fs.readFile(virtualAccountsFile, 'utf8'));
-    sessions = JSON.parse(await fs.readFile(sessionsFile, 'utf8'));
-    systemTransactions = JSON.parse(await fs.readFile(systemTransactionsFile, 'utf8'));
-    analytics = JSON.parse(await fs.readFile(analyticsFile, 'utf8'));
-    apiResponses = JSON.parse(await fs.readFile(apiResponsesFile, 'utf8'));
+    let loaded = false;
     
-    console.log('✅ All data loaded successfully');
-    console.log(`📊 Stats: ${Object.keys(users).length} users, ${Object.keys(transactions).length} users with transactions, ${systemTransactions.length} system transactions`);
+    // Try to load main files first
+    try {
+      users = JSON.parse(await fs.readFile(usersFile, 'utf8'));
+      transactions = JSON.parse(await fs.readFile(transactionsFile, 'utf8'));
+      virtualAccountsData = JSON.parse(await fs.readFile(virtualAccountsFile, 'utf8'));
+      sessions = JSON.parse(await fs.readFile(sessionsFile, 'utf8'));
+      systemTransactions = JSON.parse(await fs.readFile(systemTransactionsFile, 'utf8'));
+      analytics = JSON.parse(await fs.readFile(analyticsFile, 'utf8'));
+      apiResponses = JSON.parse(await fs.readFile(apiResponsesFile, 'utf8'));
+      loaded = true;
+      console.log('✅ All data loaded successfully from main files');
+    } catch (mainError) {
+      console.log('⚠️ Main data files not found or corrupted, trying backup...');
+      
+      // Try to load from backup
+      const backupData = await loadFromBackup();
+      if (backupData) {
+        users = backupData.users;
+        virtualAccountsData = backupData.virtualAccounts;
+        transactions = backupData.transactions;
+        loaded = true;
+        console.log('✅ Data restored from backup!');
+        
+        // Save restored data to main files
+        await saveAllData();
+      }
+    }
+    
+    if (loaded) {
+      console.log(`📊 Stats: ${Object.keys(users).length} users, ${Object.keys(transactions).length} users with transactions, ${systemTransactions.length} system transactions`);
+    } else {
+      console.log('⚠️ No data found - starting with empty database');
+    }
   } catch (error) {
     console.error('❌ Error loading data:', error);
   }
