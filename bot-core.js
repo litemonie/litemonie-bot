@@ -31,6 +31,9 @@ const buyElectricity = require('./app/Bill/light');
 const buyTVSubscription = require('./app/Bill/tv');
 const { showProfile } = require('./profile');
 
+// ========== UPGRADE RECOVERY IMPORTS ==========
+const { handleUpgradeRecovery, processRecoveryInput, handleCancelRecovery, handleRestoreButton, isFreshDeployment } = require('./upgrade');
+
 // Global bot instance
 let botInstance = null;
 let serverInstance = null;
@@ -955,6 +958,11 @@ async function setupMenuHandlers(bot) {
       { parse_mode: 'MarkdownV2' }
     );
   });
+
+  // ========== UPGRADE/RESTORE BUTTON HANDLER ==========
+  bot.hears('🔄 Restore My Account', async (ctx) => {
+    await handleRestoreButton(ctx);
+  });
 }
 
 async function setupCallbackHandlers(bot) {
@@ -1611,6 +1619,17 @@ async function setupCallbackHandlers(bot) {
       }
     );
   });
+
+  // ========== UPGRADE RECOVERY CALLBACKS ==========
+  bot.action('upgrade_recovery', async (ctx) => {
+    await handleUpgradeRecovery(ctx);
+    await ctx.answerCbQuery();
+  });
+
+  bot.action('cancel_recovery', async (ctx) => {
+    await handleCancelRecovery(ctx);
+    await ctx.answerCbQuery();
+  });
   
   console.log('✅ All callbacks registered');
 }
@@ -1714,6 +1733,16 @@ async function launchBot(useWebhook = false) {
             return false;
           }
         }, virtualAccounts);
+        return;
+      }
+      
+      // ========== UPGRADE RECOVERY INPUT HANDLER ==========
+      // Check for upgrade recovery session FIRST
+      const recoverySession = await getSession(userId);
+      
+      if (recoverySession && recoverySession.action === 'upgrade_recovery') {
+        console.log(`📝 Handling upgrade recovery input for user ${userId}`);
+        await processRecoveryInput(ctx, text);
         return;
       }
       
