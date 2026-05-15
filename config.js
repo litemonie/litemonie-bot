@@ -9,7 +9,7 @@ const CONFIG = {
   VTU_API_KEY: process.env.VTU_API_KEY || 'your_vtu_naija_api_key_here',
   VTU_BASE_URL: 'https://vtunaija.com.ng/api',
   ADMIN_ID: process.env.ADMIN_ID || '1279640125',
-  SERVICE_FEE: 0,
+  SERVICE_FEE: 10,
   MIN_AIRTIME: 50,
   MAX_AIRTIME: 50000,
   BILLSTACK_API_KEY: process.env.BILLSTACK_API_KEY,
