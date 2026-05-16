@@ -7,7 +7,6 @@ const { getUsers, setUsers, saveAllData, loadFromBackup, getVirtualAccounts, set
 const { initUser, formatCurrency } = require('./utils');
 
 // ============ SESSION MANAGEMENT FOR UPGRADE ============
-// These functions are defined here since they're only used for upgrade recovery
 const upgradeSessions = {};
 
 async function getUpgradeSession(userId) {
@@ -24,21 +23,19 @@ async function clearUpgradeSession(userId) {
 }
 // ============ END SESSION MANAGEMENT ============
 
-// Check if this is a fresh deployment (no users or very few)
+// ============ FIXED: ALWAYS SHOW RESTORE BUTTON ============
+// Changed from checking user count to always showing the button
+// This ensures all users can access account recovery
 function isFreshDeployment() {
-    const users = getUsers();
-    const userCount = Object.keys(users).length;
-    
-    // If there are 0 or only 1 user (maybe just admin), consider it fresh
-    return userCount <= 1;
+    // ALWAYS return true to show the restore button
+    // Users can choose to restore if they lost data
+    return true;
 }
 
-// Get menu button
+// Get menu button - NOW ALWAYS RETURNS BUTTON
 function getUpgradeButton() {
-    if (isFreshDeployment()) {
-        return [Markup.button.callback('🔄 RESTORE MY ACCOUNT', 'upgrade_recovery')];
-    }
-    return [];
+    // Always return the restore button
+    return [Markup.button.callback('🔄 RESTORE MY ACCOUNT', 'upgrade_recovery')];
 }
 
 // Main recovery handler
@@ -46,36 +43,34 @@ async function handleUpgradeRecovery(ctx) {
     const userId = ctx.from.id.toString();
     console.log(`🔧 Upgrade recovery triggered by user: ${userId}`);
     
-    // Check if user already has data
+    // Check if user already has data - don't block recovery, just inform
     const users = getUsers();
-    if (users[userId] && users[userId].wallet > 0) {
-        await ctx.reply(
-            `✅ *ACCOUNT ALREADY HAS DATA*\n\n` +
-            `💰 Balance: ${formatCurrency(users[userId].wallet || 0)}\n` +
-            `📧 Email: ${users[userId].email || 'Not set'}\n\n` +
-            `Your account already has data. No recovery needed.`,
-            { parse_mode: 'Markdown' }
-        );
-        return;
+    const currentUser = users[userId];
+    
+    let warningMessage = '';
+    if (currentUser && currentUser.wallet > 0) {
+        warningMessage = `\n⚠️ *WARNING:* You already have ₦${currentUser.wallet.toLocaleString()} in your wallet.\nRestoring from backup will OVERWRITE your current balance.\n\n`;
     }
     
     await ctx.reply(
         `🔄 *ACCOUNT RECOVERY*\n\n` +
-        `It seems your account data may have been lost after a recent update.\n\n` +
+        `Use this if you lost your account data after an update.\n\n` +
+        warningMessage +
         `📝 *To restore your account, please enter:*\n` +
         `• Your registered email address OR\n` +
         `• Your registered phone number\n\n` +
         `💡 *Example:* keketobou@gmail.com or 08012345678\n\n` +
-        `⚠️ Use the same email/phone you used when you first registered.`,
+        `⚠️ Use the same email/phone you used when you first registered.\n\n` +
+        `❌ Type /cancel to abort.`,
         {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard([
-                [Markup.button.callback('❌ Cancel', 'cancel_recovery')]
+                [Markup.button.callback('❌ Cancel Recovery', 'cancel_recovery')]
             ])
         }
     );
     
-    // Set session for recovery using local session manager
+    // Set session for recovery
     await setUpgradeSession(userId, { action: 'upgrade_recovery', step: 'waiting_for_input' });
 }
 
@@ -86,6 +81,12 @@ async function processRecoveryInput(ctx, text) {
     
     console.log(`🔍 Processing recovery input for ${userId}: ${input}`);
     
+    // Check for cancel command
+    if (text === '/cancel') {
+        await handleCancelRecovery(ctx);
+        return true;
+    }
+    
     // Try to load from backup
     const backupData = await loadFromBackup();
     
@@ -94,7 +95,7 @@ async function processRecoveryInput(ctx, text) {
             `❌ *NO BACKUP FOUND*\n\n` +
             `No backup data is available at this time.\n\n` +
             `📞 Please contact support @opuenekeke for manual recovery.\n\n` +
-            `Please provide your User ID: \`${userId}\``,
+            `📝 *Your User ID:* \`${userId}\``,
             { parse_mode: 'Markdown' }
         );
         await clearUpgradeSession(userId);
@@ -131,6 +132,9 @@ async function processRecoveryInput(ctx, text) {
         // Get current users
         const currentUsers = getUsers();
         const currentVirtualAccounts = getVirtualAccounts();
+        
+        // Store old balance for message
+        const oldBalance = currentUsers[userId]?.wallet || 0;
         
         // Restore user data
         const restoredBalance = foundUserData.wallet || 0;
@@ -209,7 +213,10 @@ async function processRecoveryInput(ctx, text) {
         
         // Send success message
         let message = `✅ *ACCOUNT RESTORED SUCCESSFULLY!*\n\n`;
-        message += `💰 *Balance Restored:* ${formatCurrency(restoredBalance)}\n`;
+        if (oldBalance > 0 && oldBalance !== restoredBalance) {
+            message += `⚠️ *Balance Changed:* ₦${oldBalance.toLocaleString()} → ₦${restoredBalance.toLocaleString()}\n\n`;
+        }
+        message += `💰 *Current Balance:* ${formatCurrency(restoredBalance)}\n`;
         message += `📧 *Email:* ${foundUserData.email || 'Not set'}\n`;
         message += `📱 *Phone:* ${foundUserData.phone || 'Not set'}\n`;
         message += `🔐 *PIN:* ${foundUserData.pin ? '✅ Set' : '❌ Not set (Use /setpin 1234)'}\n\n`;
@@ -232,7 +239,8 @@ async function processRecoveryInput(ctx, text) {
             `• There's a typo in what you entered\n` +
             `• No backup exists for this account\n\n` +
             `📞 Please contact support @opuenekeke for assistance.\n\n` +
-            `📝 *Your User ID:* \`${userId}\``,
+            `📝 *Your User ID:* \`${userId}\`\n\n` +
+            `🔄 Try again with a different email/phone:`,
             { parse_mode: 'Markdown' }
         );
         return false;
@@ -245,11 +253,21 @@ async function handleCancelRecovery(ctx) {
     await clearUpgradeSession(userId);
     
     try {
-        await ctx.editMessageText(
-            `❌ *Recovery Cancelled*\n\n` +
-            `You can use /start to access the main menu.`,
-            { parse_mode: 'Markdown' }
-        );
+        // Try to edit if it's a callback message
+        if (ctx.callbackQuery) {
+            await ctx.editMessageText(
+                `❌ *Recovery Cancelled*\n\n` +
+                `You can use /start to access the main menu.`,
+                { parse_mode: 'Markdown' }
+            );
+            await ctx.answerCbQuery().catch(() => {});
+        } else {
+            await ctx.reply(
+                `❌ *Recovery Cancelled*\n\n` +
+                `You can use /start to access the main menu.`,
+                { parse_mode: 'Markdown' }
+            );
+        }
     } catch (error) {
         await ctx.reply(
             `❌ *Recovery Cancelled*\n\n` +
@@ -257,13 +275,17 @@ async function handleCancelRecovery(ctx) {
             { parse_mode: 'Markdown' }
         );
     }
-    await ctx.answerCbQuery().catch(() => {});
 }
 
-// Add the upgrade button to main menu (to be called in bot-core.js)
+// Add the upgrade button to main menu
 function addUpgradeButtonToMenu(keyboard) {
-    if (isFreshDeployment()) {
-        // Add the restore button to the bottom of the menu
+    // ALWAYS add the restore button to the bottom of the menu
+    // Check if it already exists to avoid duplicates
+    const hasRestoreButton = keyboard.some(row => 
+        row.includes('🔄 Restore My Account')
+    );
+    
+    if (!hasRestoreButton) {
         return [...keyboard, ['🔄 Restore My Account']];
     }
     return keyboard;
@@ -274,11 +296,7 @@ async function handleRestoreButton(ctx) {
     await handleUpgradeRecovery(ctx);
 }
 
-// Export getUpgradeSession for bot-core.js to use
-async function getUpgradeSessionForUser(userId) {
-    return await getUpgradeSession(userId);
-}
-
+// Export functions
 module.exports = {
     getUpgradeButton,
     handleUpgradeRecovery,
@@ -287,5 +305,5 @@ module.exports = {
     handleRestoreButton,
     addUpgradeButtonToMenu,
     isFreshDeployment,
-    getUpgradeSession: getUpgradeSessionForUser
+    getUpgradeSession
 };
