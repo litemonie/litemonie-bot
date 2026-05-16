@@ -1881,7 +1881,7 @@ async function launchBot(useWebhook = false) {
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
-    // ================================================================
+   // ================================================================
     // SECTION 10.1: TEXT HANDLER (ROUTES ALL TEXT INPUTS)
     // ================================================================
     botInstance.on('text', async (ctx) => {
@@ -1936,8 +1936,9 @@ async function launchBot(useWebhook = false) {
         }
       }
       
-      // THIRD: Check for upgrade recovery session (FULLY INTEGRATED)
-      const recoverySession = await getSession(userId);
+      // THIRD: Check for upgrade recovery session - FIXED to use getUpgradeSession
+      const { getUpgradeSession, processRecoveryInput } = require('./upgrade');
+      const recoverySession = await getUpgradeSession(userId);
       
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
         console.log(`📝 Handling upgrade recovery input for user ${userId}`);
@@ -1949,45 +1950,6 @@ async function launchBot(useWebhook = false) {
       console.log(`📝 No session found for user ${userId}, using regular handler`);
       await handleTextMessage(ctx, text);
     });
-    
-    botInstance.catch((err, ctx) => {
-      console.error('❌ Global Error:', err);
-      ctx.reply('❌ An error occurred', { parse_mode: 'MarkdownV2' }).catch(() => {});
-    });
-    
-    const PORT = process.env.PORT || 3000;
-    serverInstance = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`\n📡 Server running on port ${PORT}`);
-      console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-      if (process.env.RENDER_EXTERNAL_URL) {
-        console.log(`🌍 Public URL: ${process.env.RENDER_EXTERNAL_URL}`);
-      }
-    });
-    
-    await botInstance.telegram.deleteWebhook();
-    console.log('✅ Deleted existing webhook');
-    
-    if (useWebhook || process.env.NODE_ENV === 'production') {
-      const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-      const webhookUrl = `${baseUrl}/webhook`;
-      await setupWebhook(botInstance, webhookUrl);
-    } else {
-      await botInstance.launch();
-      console.log('✅ Bot running in DEVELOPMENT mode with polling');
-    }
-    
-    console.log(`👑 Admin ID: ${require('./config').CONFIG.ADMIN_ID}`);
-    console.log(`🤖 Bot Username: @${botInstance.options?.username || 'unknown'}`);
-    return botInstance;
-  } catch (error) {
-    console.error('❌ Failed to launch bot:', error);
-    if (error.code === 404 || (error.response && error.response.error_code === 404)) {
-      console.error('\n🔴 CRITICAL: Bot token is invalid or bot does not exist!');
-      console.error('Please check your BOT_TOKEN environment variable in Render dashboard.');
-    }
-    throw error;
-  }
-}
 
 // ====================================================================
 // SECTION 11: EXPORTS
