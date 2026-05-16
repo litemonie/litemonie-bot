@@ -1,4 +1,4 @@
-// app/sendmoney.js - COMPLETE VERSION WITH LITEMONI
+// app/sendmoney.js - COMPLETE FIXED VERSION
 const axios = require('axios');
 const { Markup } = require('telegraf');
 
@@ -22,6 +22,21 @@ const sendMoneySessions = {};
 let cachedBanks = [];
 let cacheTimestamp = 0;
 const CACHE_DURATION = 3600000;
+
+// Escape MarkdownV2 special characters
+function escapeMarkdown(text) {
+  if (typeof text !== 'string') return String(text);
+  const specialChars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
+  let escaped = '';
+  for (const char of text) {
+    escaped += specialChars.includes(char) ? '\\' + char : char;
+  }
+  return escaped;
+}
+
+function formatCurrency(amount) {
+  return `₦${Math.floor(amount).toLocaleString('en-NG')}`;
+}
 
 // Session management 
 const sessionManager = {
@@ -73,19 +88,16 @@ async function handleLiteMoni(ctx, users) {
       return await ctx.reply('❌ User not found. Please use /start first.');
     }
     
-    // KYC check
     if (user.kycStatus !== 'approved') {
       return await ctx.reply(
-        '❌ *KYC VERIFICATION REQUIRED*\n\n' +
-        'Complete your KYC using the 🛂 KYC Status menu option.',
+        '❌ *KYC VERIFICATION REQUIRED*\n\nComplete your KYC using the 🛂 KYC Status menu option.',
         { parse_mode: 'MarkdownV2' }
       );
     }
     
     if (!user.pin) {
       return await ctx.reply(
-        '❌ *TRANSACTION PIN NOT SET*\n\n' +
-        'Use `/setpin 1234` to set your PIN.',
+        '❌ *TRANSACTION PIN NOT SET*\n\nUse `/setpin 1234` to set your PIN.',
         { parse_mode: 'MarkdownV2' }
       );
     }
@@ -135,7 +147,6 @@ async function processLiteMoniTransfer(ctx, phoneNumber, users, transactions) {
     return false;
   }
   
-  // Clean phone number
   let cleanPhone = phoneNumber.replace(/\s+/g, '');
   if (cleanPhone.startsWith('+')) {
     cleanPhone = cleanPhone.substring(1);
@@ -147,22 +158,17 @@ async function processLiteMoniTransfer(ctx, phoneNumber, users, transactions) {
     cleanPhone = '0' + cleanPhone;
   }
   
-  // Validate phone format (11 digits starting with 0)
   if (!/^0[789][01]\d{8}$/.test(cleanPhone)) {
     await ctx.reply(
       '❌ *INVALID PHONE NUMBER*\n\n' +
       'Please enter a valid Nigerian phone number:\n' +
-      '• 080XXXXXXXX\n' +
-      '• 081XXXXXXXX\n' +
-      '• 070XXXXXXXX\n' +
-      '• 090XXXXXXXX\n\n' +
+      '• 080XXXXXXXX\n• 081XXXXXXXX\n• 070XXXXXXXX\n• 090XXXXXXXX\n\n' +
       'Try again:',
       { parse_mode: 'MarkdownV2' }
     );
     return true;
   }
   
-  // Find recipient by phone number
   let recipientId = null;
   let recipient = null;
   
@@ -178,8 +184,8 @@ async function processLiteMoniTransfer(ctx, phoneNumber, users, transactions) {
     await ctx.reply(
       `❌ *USER NOT FOUND*\n\n` +
       `No LiteMoni user found with phone number: ${cleanPhone}\n\n` +
-      `💡 *Tip:* The recipient must be registered on LiteMoni.\n\n` +
-      `Enter another phone number or type /cancel:`,
+      `💡 The recipient must be registered on LiteMoni.\n\n` +
+      `Enter another phone number:`,
       { parse_mode: 'MarkdownV2' }
     );
     return true;
@@ -187,9 +193,7 @@ async function processLiteMoniTransfer(ctx, phoneNumber, users, transactions) {
   
   if (recipientId === userId) {
     await ctx.reply(
-      '❌ *CANNOT TRANSFER TO SELF*\n\n' +
-      'You cannot send money to your own account.\n\n' +
-      'Enter a different phone number:',
+      '❌ *CANNOT TRANSFER TO SELF*\n\nEnter a different phone number:',
       { parse_mode: 'MarkdownV2' }
     );
     return true;
@@ -249,8 +253,6 @@ async function processLiteMoniAmount(ctx, amount, users, transactions) {
   
   sessionManager.updateStep(userId, 3, { amount: amountNum });
   
-  const recipient = users[session.data.recipientId];
-  
   await ctx.reply(
     `📋 *LITEMONI TRANSFER SUMMARY*\n\n` +
     `📤 *To:* ${escapeMarkdown(session.data.recipientName)}\n` +
@@ -281,17 +283,14 @@ async function confirmLiteMoniTransfer(ctx, pin, users, transactions) {
       sender.pinLocked = true;
       sessionManager.clearSession(userId);
       await ctx.reply(
-        '❌ *ACCOUNT LOCKED*\n\n' +
-        'Too many wrong PIN attempts. Contact admin to unlock.',
+        '❌ *ACCOUNT LOCKED*\n\nToo many wrong PIN attempts. Contact admin.',
         { parse_mode: 'MarkdownV2' }
       );
       return true;
     }
     
     await ctx.reply(
-      `❌ *WRONG PIN*\n\n` +
-      `⚠️ Attempts left: ${3 - sender.pinAttempts}\n\n` +
-      `Enter correct PIN:`,
+      `❌ *WRONG PIN*\n\n⚠️ Attempts left: ${3 - sender.pinAttempts}\n\nEnter correct PIN:`,
       { parse_mode: 'MarkdownV2' }
     );
     return true;
@@ -303,31 +302,19 @@ async function confirmLiteMoniTransfer(ctx, pin, users, transactions) {
   const recipient = users[recipientId];
   
   if (!recipient) {
-    await ctx.reply(
-      '❌ *TRANSFER FAILED*\n\n' +
-      'Recipient no longer exists.',
-      { parse_mode: 'MarkdownV2' }
-    );
+    await ctx.reply('❌ *TRANSFER FAILED*\n\nRecipient no longer exists.', { parse_mode: 'MarkdownV2' });
     sessionManager.clearSession(userId);
     return true;
   }
   
-  // Process the transfer
-  const processingMsg = await ctx.reply(
-    '🔄 *PROCESSING LITEMONI TRANSFER...*\n\n' +
-    '⏳ Please wait...',
-    { parse_mode: 'MarkdownV2' }
-  );
+  const processingMsg = await ctx.reply('🔄 *PROCESSING LITEMONI TRANSFER...*\n\n⏳ Please wait...', { parse_mode: 'MarkdownV2' });
   
   try {
-    // Deduct from sender
     sender.wallet -= amount;
-    
-    // Add to recipient
     recipient.wallet += amount;
     
-    // Create transaction record for sender
-    const senderTransaction = {
+    if (!transactions[userId]) transactions[userId] = [];
+    transactions[userId].push({
       type: 'litemoni_sent',
       amount: amount,
       recipientName: recipientName,
@@ -336,15 +323,10 @@ async function confirmLiteMoniTransfer(ctx, pin, users, transactions) {
       status: 'completed',
       date: new Date().toLocaleString(),
       balance: sender.wallet
-    };
+    });
     
-    if (!transactions[userId]) {
-      transactions[userId] = [];
-    }
-    transactions[userId].push(senderTransaction);
-    
-    // Create transaction record for recipient
-    const recipientTransaction = {
+    if (!transactions[recipientId]) transactions[recipientId] = [];
+    transactions[recipientId].push({
       type: 'litemoni_received',
       amount: amount,
       senderName: sender.name || sender.username || 'LiteMoni User',
@@ -353,37 +335,17 @@ async function confirmLiteMoniTransfer(ctx, pin, users, transactions) {
       status: 'completed',
       date: new Date().toLocaleString(),
       balance: recipient.wallet
-    };
+    });
     
-    if (!transactions[recipientId]) {
-      transactions[recipientId] = [];
-    }
-    transactions[recipientId].push(recipientTransaction);
-    
-    // Notify recipient
     try {
-      await ctx.telegram.sendMessage(
-        recipientId,
-        `✅ *MONEY RECEIVED!*\n\n` +
-        `📥 *You received:* ₦${amount.toLocaleString()}\n` +
-        `📤 *From:* ${escapeMarkdown(sender.name || sender.username || 'LiteMoni User')}\n` +
-        `📞 *Phone:* ${sender.phone || 'Unknown'}\n` +
-        `💳 *New Balance:* ₦${recipient.wallet.toLocaleString()}\n\n` +
-        `Thank you for using LiteMoni! 🎉`,
+      await ctx.telegram.sendMessage(recipientId,
+        `✅ *MONEY RECEIVED!*\n\n📥 *You received:* ₦${amount.toLocaleString()}\n📤 *From:* ${escapeMarkdown(sender.name || sender.username || 'LiteMoni User')}\n💳 *New Balance:* ₦${recipient.wallet.toLocaleString()}`,
         { parse_mode: 'MarkdownV2' }
       );
-    } catch (e) {
-      console.log('Could not notify recipient:', e.message);
-    }
+    } catch (e) {}
     
     await ctx.reply(
-      `✅ *LITEMONI TRANSFER SUCCESSFUL!*\n\n` +
-      `📤 *Sent to:* ${escapeMarkdown(recipientName)}\n` +
-      `📞 *Phone:* ${recipientPhone}\n` +
-      `💰 *Amount:* ₦${amount.toLocaleString()}\n` +
-      `💸 *Fee:* FREE\n` +
-      `💳 *New Balance:* ₦${sender.wallet.toLocaleString()}\n\n` +
-      `🎉 Transfer completed instantly!`,
+      `✅ *LITEMONI TRANSFER SUCCESSFUL!*\n\n📤 *Sent to:* ${escapeMarkdown(recipientName)}\n📞 *Phone:* ${recipientPhone}\n💰 *Amount:* ₦${amount.toLocaleString()}\n💸 *Fee:* FREE\n💳 *New Balance:* ₦${sender.wallet.toLocaleString()}\n\n🎉 Transfer completed instantly!`,
       {
         parse_mode: 'MarkdownV2',
         ...Markup.inlineKeyboard([
@@ -397,56 +359,40 @@ async function confirmLiteMoniTransfer(ctx, pin, users, transactions) {
     
   } catch (error) {
     console.error('❌ LiteMoni transfer error:', error);
-    sender.wallet += amount; // Refund
-    
-    await ctx.reply(
-      '❌ *TRANSFER FAILED*\n\n' +
-      'An error occurred. Your money has been refunded.\n\n' +
-      'Please try again later.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    
+    sender.wallet += amount;
+    await ctx.reply('❌ *TRANSFER FAILED*\n\nAn error occurred. Your money has been refunded.', { parse_mode: 'MarkdownV2' });
     sessionManager.clearSession(userId);
   }
   
-  try {
-    await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
-  } catch (e) {}
+  try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch (e) {}
   
   return true;
 }
 
-// =============== BANK TRANSFER FUNCTIONS (existing code) ===============
+// =============== BANK TRANSFER FUNCTIONS ===============
 
 async function getKoraHeaders() {
-  // ... (keep your existing getKoraHeaders function)
   try {
-    console.log('🔑 Setting up Kora API headers...');
-    if (!CONFIG.KORA_API_KEY) {
-      throw new Error('Kora API key not configured');
-    }
-    const cleanKey = CONFIG.KORA_API_KEY.toString().trim();
+    if (!CONFIG.KORA_API_KEY) throw new Error('Kora API key not configured');
     return {
-      'x-api-key': cleanKey,
+      'x-api-key': CONFIG.KORA_API_KEY.toString().trim(),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     };
   } catch (error) {
-    console.error('❌ Header setup error:', error.message);
     throw new Error('Failed to setup Kora API headers');
   }
 }
 
 async function resolveBankAccount(accountNumber, bankCode) {
-  // ... (keep your existing resolveBankAccount function)
   try {
     const headers = await getKoraHeaders();
     const response = await axios.post(
       `${CONFIG.KORA_BASE_URL}/merchant/api/v1/misc/banks/resolve`,
       { account: accountNumber, bank: bankCode },
-      { headers: headers, timeout: 15000 }
+      { headers, timeout: 15000 }
     );
-    if (response.data && response.data.status === true && response.data.data) {
+    if (response.data?.status === true && response.data.data) {
       return {
         success: true,
         accountName: response.data.data.account_name || 'Account Holder',
@@ -455,27 +401,22 @@ async function resolveBankAccount(accountNumber, bankCode) {
         bankName: response.data.data.bank_name || 'Selected Bank'
       };
     }
-    return { success: false, error: response.data.message || 'Invalid response' };
+    return { success: false, error: response.data?.message || 'Invalid response' };
   } catch (error) {
-    console.error('❌ Account resolution error:', error.message);
     return { success: false, error: error.response?.data?.message || 'Failed to resolve account' };
   }
 }
 
 async function getBanks() {
-  // ... (keep your existing getBanks function)
-  if (cachedBanks.length > 0 && (Date.now() - cacheTimestamp) < CACHE_DURATION) {
-    return cachedBanks;
-  }
+  if (cachedBanks.length > 0 && (Date.now() - cacheTimestamp) < CACHE_DURATION) return cachedBanks;
   try {
     const headers = await getKoraHeaders();
-    const response = await axios.get(
-      `${CONFIG.KORA_BASE_URL}/merchant/api/v1/misc/banks`,
-      { params: { countryCode: 'NG' }, headers: headers, timeout: 15000 }
-    );
-    if (response.data && response.data.status === true && response.data.data) {
+    const response = await axios.get(`${CONFIG.KORA_BASE_URL}/merchant/api/v1/misc/banks`, {
+      params: { countryCode: 'NG' }, headers, timeout: 15000
+    });
+    if (response.data?.status === true && response.data.data) {
       cachedBanks = response.data.data.filter(b => b.name && b.code).map(b => ({
-        code: b.code, name: b.name, slug: b.slug, country: b.country
+        code: b.code, name: b.name
       })).sort((a, b) => a.name.localeCompare(b.name));
       cacheTimestamp = Date.now();
       return cachedBanks;
@@ -488,13 +429,13 @@ async function getBanks() {
 
 function getComprehensiveBanks() {
   return [
-    { code: "044", name: "Access Bank" }, { code: "058", name: "Guaranty Trust Bank (GTBank)" },
-    { code: "033", name: "United Bank for Africa (UBA)" }, { code: "011", name: "First Bank of Nigeria" },
-    { code: "057", name: "Zenith Bank" }, { code: "214", name: "First City Monument Bank (FCMB)" },
+    { code: "044", name: "Access Bank" }, { code: "058", name: "GTBank" },
+    { code: "033", name: "UBA" }, { code: "011", name: "First Bank" },
+    { code: "057", name: "Zenith Bank" }, { code: "214", name: "FCMB" },
     { code: "232", name: "Sterling Bank" }, { code: "070", name: "Fidelity Bank" },
-    { code: "050", name: "Ecobank Nigeria" }, { code: "076", name: "Polaris Bank" },
+    { code: "050", name: "Ecobank" }, { code: "076", name: "Polaris Bank" },
     { code: "999991", name: "Kuda Bank" }, { code: "100002", name: "OPay" },
-    { code: "100003", name: "PalmPay" }, { code: "100004", name: "Moniepoint MFB" }
+    { code: "100003", name: "PalmPay" }, { code: "100004", name: "Moniepoint" }
   ];
 }
 
@@ -503,7 +444,6 @@ function getPopularBanks(banks) {
 }
 
 function createBankKeyboard(banks, page = 0, searchQuery = '') {
-  // ... (keep your existing createBankKeyboard function)
   const buttons = [];
   const startIndex = page * CONFIG.BANKS_PER_PAGE;
   const paginatedBanks = banks.slice(startIndex, startIndex + CONFIG.BANKS_PER_PAGE);
@@ -530,7 +470,6 @@ function searchBanks(banks, query) {
 }
 
 async function initiateTransfer(transferData, userInfo = null) {
-  // ... (keep your existing initiateTransfer function)
   try {
     const headers = await getKoraHeaders();
     const reference = `KPY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -552,27 +491,13 @@ async function initiateTransfer(transferData, userInfo = null) {
       }
     };
     const response = await axios.post(`${CONFIG.KORA_BASE_URL}/merchant/api/v1/transactions/disburse`, payload, { headers, timeout: 30000 });
-    if (response.data && response.data.status === true) {
-      return { success: true, reference: reference, status: 'processing', message: 'Transfer initiated' };
+    if (response.data?.status === true) {
+      return { success: true, reference, status: 'processing', message: 'Transfer initiated' };
     }
-    return { success: false, error: response.data.message || 'Transfer failed' };
+    return { success: false, error: response.data?.message || 'Transfer failed' };
   } catch (error) {
     return { success: false, error: error.message };
   }
-}
-
-function escapeMarkdown(text) {
-  if (typeof text !== 'string') return String(text);
-  const specialChars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
-  let escaped = '';
-  for (const char of text) {
-    escaped += specialChars.includes(char) ? '\\' + char : char;
-  }
-  return escaped;
-}
-
-function formatCurrency(amount) {
-  return `₦${Math.floor(amount).toLocaleString('en-NG')}`;
 }
 
 function isKoraConfigured() {
@@ -583,16 +508,8 @@ function isKoraConfigured() {
 
 async function showSendMoneyMenu(ctx) {
   try {
-    const userId = ctx.from.id.toString();
-    
     await ctx.reply(
-      `💸 *SEND MONEY*\n\n` +
-      `Select transfer type:\n\n` +
-      `🏦 *Bank Transfer* - Send to any Nigerian bank account\n` +
-      `📱 *LiteMoni* - Instant transfer to LiteMoni users\n\n` +
-      `*Fees:*\n` +
-      `• Bank Transfer: ₦100 flat fee\n` +
-      `• LiteMoni: FREE!`,
+      `💸 *SEND MONEY*\n\nSelect transfer type:\n\n🏦 *Bank Transfer* - Send to any Nigerian bank account\n📱 *LiteMoni* - Instant transfer to LiteMoni users\n\n*Fees:*\n• Bank Transfer: ₦100 flat fee\n• LiteMoni: FREE!`,
       {
         parse_mode: 'MarkdownV2',
         ...Markup.inlineKeyboard([
@@ -608,97 +525,274 @@ async function showSendMoneyMenu(ctx) {
   }
 }
 
-// =============== MAIN HANDLER ===============
-
 async function handleSendMoney(ctx, users, transactions) {
   return await showSendMoneyMenu(ctx);
 }
 
-// Handle callback queries
+// =============== BANK TRANSFER TEXT HANDLER ===============
+
+async function handleBankTransferText(ctx, text, users) {
+  const userId = ctx.from.id.toString();
+  const session = sessionManager.getSession(userId);
+  const user = users[userId];
+  
+  if (!session || session.action !== 'bank_transfer') return false;
+  
+  // Step 2: Account number
+  if (session.step === 1) {
+    const accountNumber = text.replace(/\s+/g, '');
+    if (!/^\d{10}$/.test(accountNumber)) {
+      await ctx.reply('❌ *INVALID ACCOUNT NUMBER*\n\nAccount number must be exactly 10 digits.\n\nTry again:', { parse_mode: 'MarkdownV2' });
+      return true;
+    }
+    sessionManager.updateStep(userId, 2, { accountNumber });
+    
+    const resolution = await resolveBankAccount(accountNumber, session.data.bankCode);
+    if (resolution.success) {
+      sessionManager.updateStep(userId, 3, { accountName: resolution.accountName });
+      await ctx.reply(
+        `✅ *ACCOUNT RESOLVED*\n\n📛 *Name:* ${escapeMarkdown(resolution.accountName)}\n🔢 *Account:* ${accountNumber}\n\n💰 *Enter amount:*\nMin: ₦${CONFIG.MIN_TRANSFER_AMOUNT.toLocaleString()}\nMax: ₦${CONFIG.MAX_TRANSFER_AMOUNT.toLocaleString()}`,
+        { parse_mode: 'MarkdownV2' }
+      );
+    } else {
+      await ctx.reply(`❌ *ACCOUNT RESOLUTION FAILED*\n\n${resolution.error}\n\nPlease enter account name manually:`, { parse_mode: 'MarkdownV2' });
+      sessionManager.updateStep(userId, 4);
+    }
+    return true;
+  }
+  
+  // Step 3: Amount
+  if (session.step === 3) {
+    const amount = parseFloat(text);
+    const total = amount + CONFIG.TRANSFER_FEE;
+    
+    if (isNaN(amount) || amount < CONFIG.MIN_TRANSFER_AMOUNT || amount > CONFIG.MAX_TRANSFER_AMOUNT) {
+      await ctx.reply(`❌ *INVALID AMOUNT*\n\nAmount must be between ₦${CONFIG.MIN_TRANSFER_AMOUNT.toLocaleString()} and ₦${CONFIG.MAX_TRANSFER_AMOUNT.toLocaleString()}.`, { parse_mode: 'MarkdownV2' });
+      return true;
+    }
+    
+    if (user.wallet < total) {
+      await ctx.reply(`❌ *INSUFFICIENT BALANCE*\n\nYour Balance: ₦${user.wallet.toLocaleString()}\nRequired: ₦${total.toLocaleString()}`, { parse_mode: 'MarkdownV2' });
+      sessionManager.clearSession(userId);
+      return true;
+    }
+    
+    sessionManager.updateStep(userId, 5, { amount, total });
+    
+    await ctx.reply(
+      `📋 *TRANSFER SUMMARY*\n\n📛 *To:* ${escapeMarkdown(session.data.accountName)}\n🔢 *Account:* ${session.data.accountNumber}\n💰 *Amount:* ₦${amount.toLocaleString()}\n💸 *Fee:* ₦${CONFIG.TRANSFER_FEE}\n💵 *Total:* ₦${total.toLocaleString()}\n\n🔐 *Enter your PIN to confirm:*`,
+      { parse_mode: 'MarkdownV2' }
+    );
+    return true;
+  }
+  
+  // Step 4: Manual account name entry
+  if (session.step === 4) {
+    sessionManager.updateStep(userId, 3, { accountName: text.substring(0, 100) });
+    await ctx.reply(
+      `✅ *Account Name Saved:* ${escapeMarkdown(text.substring(0, 100))}\n\n💰 *Enter amount:*`,
+      { parse_mode: 'MarkdownV2' }
+    );
+    return true;
+  }
+  
+  // Step 5: PIN confirmation
+  if (session.step === 5) {
+    if (text !== user.pin) {
+      user.pinAttempts = (user.pinAttempts || 0) + 1;
+      if (user.pinAttempts >= 3) {
+        await ctx.reply('❌ *ACCOUNT LOCKED*\n\nToo many wrong PIN attempts.', { parse_mode: 'MarkdownV2' });
+        sessionManager.clearSession(userId);
+        return true;
+      }
+      await ctx.reply(`❌ *WRONG PIN*\n\nAttempts left: ${3 - user.pinAttempts}`, { parse_mode: 'MarkdownV2' });
+      return true;
+    }
+    
+    user.pinAttempts = 0;
+    user.wallet -= session.data.total;
+    
+    await ctx.reply(
+      `✅ *TRANSFER INITIATED!*\n\n💰 Amount: ₦${session.data.amount.toLocaleString()}\n💳 New Balance: ₦${user.wallet.toLocaleString()}\n\nFunds will reflect within minutes.`,
+      { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Home', 'start')]]) }
+    );
+    
+    sessionManager.clearSession(userId);
+    return true;
+  }
+  
+  return false;
+}
+
+// =============== CALLBACK HANDLERS ===============
+
+async function handleAllBanks(ctx) {
+  const userId = ctx.from.id.toString();
+  const banks = await getBanks();
+  const keyboard = createBankKeyboard(banks, 0, '');
+  await ctx.editMessageText(
+    `🏦 *SELECT BANK*\n\n📋 All Banks (${banks.length} total)\nUse buttons below:`,
+    { parse_mode: 'MarkdownV2', ...keyboard }
+  );
+  ctx.answerCbQuery();
+}
+
+async function handlePopularBanks(ctx) {
+  const userId = ctx.from.id.toString();
+  const banks = await getBanks();
+  const popularBanks = getPopularBanks(banks);
+  const buttons = popularBanks.slice(0, 10).map(bank => [Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`)]);
+  buttons.push([Markup.button.callback('🔍 Search', 'sendmoney_search_bank'), Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')]);
+  buttons.push([Markup.button.callback('❌ Cancel', 'start')]);
+  await ctx.editMessageText(
+    `🏦 *POPULAR BANKS*\n\nSelect a bank:`,
+    { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(buttons) }
+  );
+  ctx.answerCbQuery();
+}
+
+async function handleSearchBank(ctx) {
+  const userId = ctx.from.id.toString();
+  const session = sessionManager.getSession(userId);
+  if (session) session.searchMode = true;
+  await ctx.editMessageText(
+    `🔍 *SEARCH BANK*\n\nType the bank name:\n\nExamples: opay, gtbank, uba`,
+    { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'sendmoney_popular_banks')]]) }
+  );
+  ctx.answerCbQuery();
+}
+
+async function handleRefreshBanks(ctx) {
+  cachedBanks = [];
+  cacheTimestamp = 0;
+  await handlePopularBanks(ctx);
+  ctx.answerCbQuery('✅ Banks refreshed');
+}
+
+async function handleBankSelection(ctx, bankCode) {
+  const userId = ctx.from.id.toString();
+  const banks = await getBanks();
+  const selectedBank = banks.find(b => b.code === bankCode);
+  if (!selectedBank) return ctx.answerCbQuery('❌ Bank not found');
+  
+  sessionManager.startSession(userId, 'bank_transfer');
+  sessionManager.updateStep(userId, 1, { bankCode, bankName: selectedBank.name });
+  
+  await ctx.editMessageText(
+    `✅ *Bank:* ${escapeMarkdown(selectedBank.name)}\n\n🔢 *Enter 10-digit account number:*`,
+    { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Change Bank', 'sendmoney_popular_banks')]]) }
+  );
+  ctx.answerCbQuery();
+}
+
+async function handleBankPagination(ctx, page, searchQuery) {
+  const banks = await getBanks();
+  let filteredBanks = searchQuery ? searchBanks(banks, searchQuery) : banks;
+  const keyboard = createBankKeyboard(filteredBanks, parseInt(page), searchQuery);
+  const title = searchQuery ? `Search: "${searchQuery}"` : 'All Banks';
+  await ctx.editMessageText(
+    `🏦 *${title}*\n\nShowing ${filteredBanks.length} banks:`,
+    { parse_mode: 'MarkdownV2', ...keyboard }
+  );
+  ctx.answerCbQuery();
+}
+
+// =============== MAIN HANDLER ===============
+
 function getCallbacks(bot, users, transactions, CONFIG) {
   return {
-    'sendmoney_menu': async (ctx) => {
-      await showSendMoneyMenu(ctx);
-      ctx.answerCbQuery();
-    },
-    
+    'sendmoney_menu': async (ctx) => { await showSendMoneyMenu(ctx); ctx.answerCbQuery(); },
     'sendmoney_bank_menu': async (ctx) => {
-      // Your existing bank transfer initialization
       const userId = ctx.from.id.toString();
       const user = users[userId];
-      
       if (!user || user.kycStatus !== 'approved' || !user.pin) {
         await ctx.reply('❌ Please complete KYC and set PIN first.');
         ctx.answerCbQuery();
         return;
       }
-      
-      sessionManager.startSession(userId, 'bank_transfer');
       const banks = await getBanks();
       const popularBanks = getPopularBanks(banks);
-      
-      const buttons = [];
-      popularBanks.slice(0, 8).forEach(bank => {
-        buttons.push([Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`)]);
-      });
-      buttons.push([Markup.button.callback('🔍 Search Bank', 'sendmoney_search_bank'), Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')]);
+      const buttons = popularBanks.slice(0, 8).map(bank => [Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`)]);
+      buttons.push([Markup.button.callback('🔍 Search', 'sendmoney_search_bank'), Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')]);
       buttons.push([Markup.button.callback('❌ Cancel', 'start')]);
-      
       await ctx.editMessageText(
         `🏦 *BANK TRANSFER*\n\n💵 Balance: ${formatCurrency(user.wallet)}\n💸 Fee: ₦100 flat\n\nSelect bank:`,
         { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(buttons) }
       );
       ctx.answerCbQuery();
     },
-    
-    'litemoni': async (ctx) => {
-      await handleLiteMoni(ctx, users);
-      ctx.answerCbQuery();
-    },
-    
-    // Include all your existing bank transfer callbacks here
-    'sendmoney_all_banks': async (ctx) => { /* your existing code */ },
-    'sendmoney_popular_banks': async (ctx) => { /* your existing code */ },
-    'sendmoney_search_bank': async (ctx) => { /* your existing code */ },
-    'sendmoney_refresh_banks': async (ctx) => { /* your existing code */ },
-    'sendmoney_banks_page_(\\d+)_?(.*)$': async (ctx) => { /* your existing code */ },
-    '^sendmoney_bank_(.+)$': async (ctx) => { /* your existing code */ },
+    'litemoni': async (ctx) => { await handleLiteMoni(ctx, users); ctx.answerCbQuery(); },
+    'sendmoney_all_banks': async (ctx) => { await handleAllBanks(ctx); },
+    'sendmoney_popular_banks': async (ctx) => { await handlePopularBanks(ctx); },
+    'sendmoney_search_bank': async (ctx) => { await handleSearchBank(ctx); },
+    'sendmoney_refresh_banks': async (ctx) => { await handleRefreshBanks(ctx); },
+    'sendmoney_banks_page_(\\d+)_?(.*)$': async (ctx) => { await handleBankPagination(ctx, ctx.match[1], ctx.match[2] || ''); },
+    '^sendmoney_bank_(.+)$': async (ctx) => { await handleBankSelection(ctx, ctx.match[1]); },
     'no_action': async (ctx) => { ctx.answerCbQuery(); }
   };
 }
 
-// Handle text messages
+// =============== TEXT HANDLER ===============
+
 async function handleText(ctx, text, users, transactions) {
   const userId = ctx.from.id.toString();
   const session = sessionManager.getSession(userId);
   
   if (!session) return false;
   
-  // LiteMoni flow
-  if (session.action === 'litemoni') {
-    if (session.step === 1) {
-      return await processLiteMoniTransfer(ctx, text, users, transactions);
-    } else if (session.step === 2) {
-      return await processLiteMoniAmount(ctx, text, users, transactions);
-    } else if (session.step === 3) {
-      return await confirmLiteMoniTransfer(ctx, text, users, transactions);
+  // Handle search mode
+  if (session.searchMode) {
+    delete session.searchMode;
+    const banks = await getBanks();
+    const results = searchBanks(banks, text);
+    if (results.length === 0) {
+      await ctx.reply(`❌ No banks found for "${text}"`, { parse_mode: 'MarkdownV2' });
+      return true;
     }
+    const buttons = results.slice(0, 10).map(bank => [Markup.button.callback(`🏦 ${bank.name}`, `sendmoney_bank_${bank.code}`)]);
+    buttons.push([Markup.button.callback('🔍 New Search', 'sendmoney_search_bank'), Markup.button.callback('🔠 All Banks', 'sendmoney_all_banks')]);
+    buttons.push([Markup.button.callback('❌ Cancel', 'start')]);
+    await ctx.reply(`🔍 *SEARCH RESULTS:* ${results.length} banks found\n\nSelect a bank:`, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(buttons) });
+    return true;
   }
   
-  // Bank transfer flow (your existing code)
+  // LiteMoni flow
+  if (session.action === 'litemoni') {
+    if (session.step === 1) return await processLiteMoniTransfer(ctx, text, users, transactions);
+    if (session.step === 2) return await processLiteMoniAmount(ctx, text, users, transactions);
+    if (session.step === 3) return await confirmLiteMoniTransfer(ctx, text, users, transactions);
+  }
+  
+  // Bank transfer flow
   if (session.action === 'bank_transfer') {
-    // Your existing bank transfer text handling code
-    // ...
+    return await handleBankTransferText(ctx, text, users);
   }
   
   return false;
 }
 
-// Export module
+// =============== TEST FUNCTION ===============
+
+async function testKoraConnection() {
+  try {
+    const headers = await getKoraHeaders();
+    const response = await axios.get(`${CONFIG.KORA_BASE_URL}/merchant/api/v1/misc/banks`, {
+      params: { countryCode: 'NG' }, headers, timeout: 10000
+    });
+    if (response.data?.status === true) return { success: true, message: 'Kora API connection successful' };
+    return { success: false, message: 'Unexpected API response' };
+  } catch (error) {
+    if (error.response?.status === 401) return { success: false, message: 'Invalid API key (401 Unauthorized)' };
+    return { success: false, message: error.message };
+  }
+}
+
+// =============== EXPORTS ===============
+
 module.exports = {
   handleSendMoney,
   getCallbacks,
   handleText,
   sessionManager,
-  testKoraConnection: async () => ({ success: true })
+  testKoraConnection
 };
