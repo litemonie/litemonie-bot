@@ -3,6 +3,33 @@
 // PRODUCTION READY - WITH RENDER/WEBHOOK SUPPORT & DEBUG ENDPOINTS
 // =====================================================
 
+// ============ FIX: ADDED SESSION MANAGEMENT FUNCTIONS ============
+// This fixes the "getSession is not defined" error
+const botSessions = {};
+
+async function getSession(userId) {
+  return botSessions[userId] || null;
+}
+
+async function setSession(userId, data) {
+  botSessions[userId] = data;
+  return botSessions[userId];
+}
+
+async function updateSession(userId, updates) {
+  if (botSessions[userId]) {
+    Object.assign(botSessions[userId], updates);
+  } else {
+    botSessions[userId] = updates;
+  }
+  return botSessions[userId];
+}
+
+async function clearSession(userId) {
+  delete botSessions[userId];
+}
+// ============ END OF FIX ============
+
 const { Telegraf } = require('telegraf');
 const express = require('express');
 const path = require('path');
@@ -831,8 +858,7 @@ async function setupMenuHandlers(bot) {
     await ctx.reply(`💰 \\*YOUR WALLET BALANCE\\*\n\n💵 Available: ${formatCurrency(user.wallet)}`, { parse_mode: 'MarkdownV2' });
   });
   
-  // ========== FIXED: DEPOSIT FUNDS HANDLER ==========
-  // Uses depositFunds.sessionManager (not getSessions()) so text handler can find the session
+  // ========== DEPOSIT FUNDS HANDLER ==========
   bot.hears('💳 Deposit Funds', async (ctx) => {
     const userId = ctx.from.id.toString();
     console.log(`🔥 DEPOSIT BUTTON CLICKED by user: ${userId}`);
@@ -851,7 +877,6 @@ async function setupMenuHandlers(bot) {
     const needsPhone = !user.phone;
     
     if (needsEmail) {
-      // ✅ FIX: Store session in depositFunds.sessionManager, not getSessions()
       depositFunds.sessionManager.startSession(userId, 'collect_email');
       console.log(`📝 Started collect_email session for ${userId} in depositFunds.sessionManager`);
       return ctx.reply(
@@ -861,7 +886,6 @@ async function setupMenuHandlers(bot) {
     }
     
     if (needsPhone) {
-      // ✅ FIX: Store session in depositFunds.sessionManager, not getSessions()
       depositFunds.sessionManager.startSession(userId, 'collect_phone');
       console.log(`📝 Started collect_phone session for ${userId} in depositFunds.sessionManager`);
       return ctx.reply(
@@ -870,7 +894,6 @@ async function setupMenuHandlers(bot) {
       );
     }
     
-    // Both email and phone exist — show deposit options
     await ctx.reply(
       `🏦 *DEPOSIT FUNDS*\n\n` +
       `👤 *User ID:* \`${userId}\`\n` +
@@ -1602,7 +1625,6 @@ async function setupCallbackHandlers(bot) {
 
   bot.action('retry_deposit', async (ctx) => {
     console.log('🟢 retry_deposit callback triggered');
-    // Re-trigger the deposit flow by simulating the hears handler
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
     const { Markup } = require('telegraf');
@@ -1701,16 +1723,14 @@ async function launchBot(useWebhook = false) {
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
-    // ========== FIXED TEXT HANDLER ==========
-    // Reads from depositFunds.sessionManager (not getSessions()) to match where
-    // the 💳 Deposit Funds hears handler writes its sessions.
+    // ========== TEXT HANDLER ==========
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       if (text.startsWith('/')) return;
       
       const userId = ctx.from.id.toString();
 
-      // ✅ FIX: Check depositFunds.sessionManager, NOT getSessions()
+      // Check depositFunds.sessionManager
       const depositSession = depositFunds.sessionManager.getSession(userId);
       
       if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
@@ -1737,7 +1757,7 @@ async function launchBot(useWebhook = false) {
       }
       
       // ========== UPGRADE RECOVERY INPUT HANDLER ==========
-      // Check for upgrade recovery session FIRST
+      // FIX: Use the getSession function we defined at the top of the file
       const recoverySession = await getSession(userId);
       
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
