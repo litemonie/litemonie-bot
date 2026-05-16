@@ -6,6 +6,24 @@ const { Markup } = require('telegraf');
 const { getUsers, setUsers, saveAllData, loadFromBackup, getVirtualAccounts, setVirtualAccounts, getTransactions, setTransactions } = require('./database');
 const { initUser, formatCurrency } = require('./utils');
 
+// ============ SESSION MANAGEMENT FOR UPGRADE ============
+// These functions are defined here since they're only used for upgrade recovery
+const upgradeSessions = {};
+
+async function getUpgradeSession(userId) {
+    return upgradeSessions[userId] || null;
+}
+
+async function setUpgradeSession(userId, data) {
+    upgradeSessions[userId] = data;
+    return upgradeSessions[userId];
+}
+
+async function clearUpgradeSession(userId) {
+    delete upgradeSessions[userId];
+}
+// ============ END SESSION MANAGEMENT ============
+
 // Check if this is a fresh deployment (no users or very few)
 function isFreshDeployment() {
     const users = getUsers();
@@ -57,9 +75,8 @@ async function handleUpgradeRecovery(ctx) {
         }
     );
     
-    // Set session for recovery
-    const { setSession } = require('./database');
-    await setSession(userId, { action: 'upgrade_recovery', step: 'waiting_for_input' });
+    // Set session for recovery using local session manager
+    await setUpgradeSession(userId, { action: 'upgrade_recovery', step: 'waiting_for_input' });
 }
 
 // Process recovery input (email or phone)
@@ -80,6 +97,7 @@ async function processRecoveryInput(ctx, text) {
             `Please provide your User ID: \`${userId}\``,
             { parse_mode: 'Markdown' }
         );
+        await clearUpgradeSession(userId);
         return false;
     }
     
@@ -117,16 +135,19 @@ async function processRecoveryInput(ctx, text) {
         // Restore user data
         const restoredBalance = foundUserData.wallet || 0;
         
+        // Preserve existing data if any
         currentUsers[userId] = {
             ...currentUsers[userId],
             wallet: restoredBalance,
-            email: foundUserData.email,
-            phone: foundUserData.phone,
-            firstName: foundUserData.firstName,
-            lastName: foundUserData.lastName,
-            username: foundUserData.username,
-            pin: foundUserData.pin,
-            kycStatus: foundUserData.kycStatus || 'pending'
+            email: foundUserData.email || currentUsers[userId]?.email,
+            phone: foundUserData.phone || currentUsers[userId]?.phone,
+            firstName: foundUserData.firstName || currentUsers[userId]?.firstName,
+            lastName: foundUserData.lastName || currentUsers[userId]?.lastName,
+            username: foundUserData.username || currentUsers[userId]?.username,
+            pin: foundUserData.pin || currentUsers[userId]?.pin,
+            kycStatus: foundUserData.kycStatus || currentUsers[userId]?.kycStatus || 'pending',
+            pinAttempts: currentUsers[userId]?.pinAttempts || 0,
+            pinLocked: currentUsers[userId]?.pinLocked || false
         };
         
         setUsers(currentUsers);
@@ -170,9 +191,18 @@ async function processRecoveryInput(ctx, text) {
         // Restore user's transactions from backup
         if (backupData.transactions && backupData.transactions[foundUserId]) {
             const currentTransactions = getTransactions();
-            currentTransactions[userId] = backupData.transactions[foundUserId];
+            if (!currentTransactions[userId]) {
+                currentTransactions[userId] = [];
+            }
+            // Merge transactions, avoiding duplicates
+            const existingTxIds = new Set(currentTransactions[userId].map(tx => tx.date + tx.amount));
+            const newTransactions = backupData.transactions[foundUserId].filter(tx => {
+                const key = tx.date + tx.amount;
+                return !existingTxIds.has(key);
+            });
+            currentTransactions[userId] = [...currentTransactions[userId], ...newTransactions];
             setTransactions(currentTransactions);
-            console.log(`✅ Restored ${backupData.transactions[foundUserId].length} transactions for user ${userId}`);
+            console.log(`✅ Restored ${newTransactions.length} transactions for user ${userId}`);
         }
         
         await saveAllData();
@@ -182,22 +212,21 @@ async function processRecoveryInput(ctx, text) {
         message += `💰 *Balance Restored:* ${formatCurrency(restoredBalance)}\n`;
         message += `📧 *Email:* ${foundUserData.email || 'Not set'}\n`;
         message += `📱 *Phone:* ${foundUserData.phone || 'Not set'}\n`;
-        message += `🔐 *PIN:* ${foundUserData.pin ? '✅ Set' : '❌ Not set'}\n\n`;
+        message += `🔐 *PIN:* ${foundUserData.pin ? '✅ Set' : '❌ Not set (Use /setpin 1234)'}\n\n`;
         message += `🎉 Your account has been restored from our backup system!\n\n`;
         message += `📱 Use /start to access the main menu.`;
         
         await ctx.reply(message, { parse_mode: 'Markdown' });
         
         // Clear recovery session
-        const { clearSession } = require('./database');
-        await clearSession(userId);
+        await clearUpgradeSession(userId);
         
         return true;
     } else {
         await ctx.reply(
             `❌ *ACCOUNT NOT FOUND*\n\n` +
             `We couldn't find an account with:\n` +
-            `🔍 "${input}"\n\n` +
+            `🔍 "${text}"\n\n` +
             `💡 *Possible reasons:*\n` +
             `• The email/phone wasn't registered before\n` +
             `• There's a typo in what you entered\n` +
@@ -213,15 +242,22 @@ async function processRecoveryInput(ctx, text) {
 // Cancel recovery
 async function handleCancelRecovery(ctx) {
     const userId = ctx.from.id.toString();
-    const { clearSession } = require('./database');
-    await clearSession(userId);
+    await clearUpgradeSession(userId);
     
-    await ctx.editMessageText(
-        `❌ *Recovery Cancelled*\n\n` +
-        `You can use /start to access the main menu.`,
-        { parse_mode: 'Markdown' }
-    );
-    await ctx.answerCbQuery();
+    try {
+        await ctx.editMessageText(
+            `❌ *Recovery Cancelled*\n\n` +
+            `You can use /start to access the main menu.`,
+            { parse_mode: 'Markdown' }
+        );
+    } catch (error) {
+        await ctx.reply(
+            `❌ *Recovery Cancelled*\n\n` +
+            `You can use /start to access the main menu.`,
+            { parse_mode: 'Markdown' }
+        );
+    }
+    await ctx.answerCbQuery().catch(() => {});
 }
 
 // Add the upgrade button to main menu (to be called in bot-core.js)
@@ -238,6 +274,11 @@ async function handleRestoreButton(ctx) {
     await handleUpgradeRecovery(ctx);
 }
 
+// Export getUpgradeSession for bot-core.js to use
+async function getUpgradeSessionForUser(userId) {
+    return await getUpgradeSession(userId);
+}
+
 module.exports = {
     getUpgradeButton,
     handleUpgradeRecovery,
@@ -245,5 +286,6 @@ module.exports = {
     handleCancelRecovery,
     handleRestoreButton,
     addUpgradeButtonToMenu,
-    isFreshDeployment
+    isFreshDeployment,
+    getUpgradeSession: getUpgradeSessionForUser
 };
