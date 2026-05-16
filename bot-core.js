@@ -1,9 +1,13 @@
-// ==================== BOT-CORE.JS ====================
+// ====================================================================
+// SECTION 1: BOT-CORE.JS - MAIN BOT INITIALIZATION
+// ====================================================================
 // Bot initialization, server setup, launch
 // PRODUCTION READY - WITH RENDER/WEBHOOK SUPPORT & DEBUG ENDPOINTS
-// =====================================================
+// ====================================================================
 
-// ============ FIX: ADDED SESSION MANAGEMENT FUNCTIONS ============
+// ====================================================================
+// SECTION 1.1: SESSION MANAGEMENT FUNCTIONS
+// ====================================================================
 // This fixes the "getSession is not defined" error
 const botSessions = {};
 
@@ -28,8 +32,10 @@ async function updateSession(userId, updates) {
 async function clearSession(userId) {
   delete botSessions[userId];
 }
-// ============ END OF FIX ============
 
+// ====================================================================
+// SECTION 1.2: REQUIRED MODULES IMPORTS
+// ====================================================================
 const { Telegraf } = require('telegraf');
 const express = require('express');
 const path = require('path');
@@ -45,7 +51,9 @@ const {
   handleAdvancedSearch, handleTextMessage
 } = require('./handlers');
 
-// Import feature modules for callbacks
+// ====================================================================
+// SECTION 1.3: FEATURE MODULE IMPORTS
+// ====================================================================
 const buyAirtime = require('./app/buyAirtime');
 const buyData = require('./app/buyData');
 const depositFunds = require('./app/depositFunds');
@@ -58,12 +66,27 @@ const buyElectricity = require('./app/Bill/light');
 const buyTVSubscription = require('./app/Bill/tv');
 const { showProfile } = require('./profile');
 
-// ========== UPGRADE RECOVERY IMPORTS ==========
-const { handleUpgradeRecovery, processRecoveryInput, handleCancelRecovery, handleRestoreButton, isFreshDeployment } = require('./upgrade');
+// ====================================================================
+// SECTION 1.4: UPGRADE RECOVERY IMPORTS (FULLY INTEGRATED)
+// ====================================================================
+const { 
+  handleUpgradeRecovery, 
+  processRecoveryInput, 
+  handleCancelRecovery, 
+  handleRestoreButton, 
+  isFreshDeployment,
+  getUpgradeSession 
+} = require('./upgrade');
 
-// Global bot instance
+// ====================================================================
+// SECTION 1.5: GLOBAL VARIABLES
+// ====================================================================
 let botInstance = null;
 let serverInstance = null;
+
+// ====================================================================
+// SECTION 2: HELPER FUNCTIONS
+// ====================================================================
 
 function registerCallbackHandlers(bot, callbacks, moduleName) {
   console.log(`🔗 Registering ${moduleName} callbacks...`);
@@ -82,6 +105,10 @@ function registerCallbackHandlers(bot, callbacks, moduleName) {
     }
   });
 }
+
+// ====================================================================
+// SECTION 3: BOT CREATION FUNCTION
+// ====================================================================
 
 async function createBot() {
   console.log('🚀 Creating bot instance...');
@@ -126,12 +153,17 @@ async function createBot() {
   return bot;
 }
 
+// ====================================================================
+// SECTION 4: EXPRESS SERVER SETUP
+// ====================================================================
+
 function setupExpressServer(bot) {
   const app = express();
   
   app.use(express.json());
   app.set('trust proxy', true);
 
+  // CORS Middleware
   app.use((req, res, next) => {
     const allowedOrigins = [
       'https://litemonie-device.onrender.com',
@@ -156,6 +188,7 @@ function setupExpressServer(bot) {
     next();
   });
 
+  // Health Check Endpoints
   app.get('/ping', (req, res) => {
     console.log('📡 Ping received!');
     res.send('pong');
@@ -211,6 +244,7 @@ function setupExpressServer(bot) {
     }
   });
 
+  // Webhook Endpoint
   app.post('/webhook', (req, res) => {
     console.log('📩 WEBHOOK RECEIVED AT:', new Date().toISOString());
     console.log('📦 Update ID:', req.body?.update_id);
@@ -233,10 +267,12 @@ function setupExpressServer(bot) {
     }
   });
 
+  // Billstack Webhook
   const billstackWebhook = require('./billstack-webhook');
   app.use('/billstack-webhook', billstackWebhook);
   console.log('✅ Billstack webhook handler active');
 
+  // Device API Endpoints
   app.get('/api/device-data', async (req, res) => {
     try {
       const { sessionId, token } = req.query;
@@ -305,11 +341,18 @@ function setupExpressServer(bot) {
   return app;
 }
 
+// ====================================================================
+// SECTION 5: COMMAND HANDLERS (SLASH COMMANDS)
+// ====================================================================
+
 async function setupCommands(bot) {
   const { getUsers, getSessions, getTransactions, setSessions } = require('./database');
   const { isAdmin, formatCurrency, escapeMarkdownV2, isValidEmail } = require('./utils');
   const { Markup } = require('telegraf');
   
+  // ================================================================
+  // SECTION 5.1: START COMMAND
+  // ================================================================
   bot.start(async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -355,7 +398,8 @@ async function setupCommands(bot) {
       await saveAllData();
     }
     
-    const keyboard = isUserAdmin ? [
+    // Build keyboard with Upgrade Recovery button if needed
+    let keyboard = isUserAdmin ? [
       ['📱 Device Financing', '📺 TV Subscription', '💡 Electricity Bill'],
       ['📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins'],
       ['📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer'],
@@ -368,6 +412,11 @@ async function setupCommands(bot) {
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
       ['🛂 KYC Status', '👤 Profile', '🆘 Help & Support']
     ];
+    
+    // Add Restore button if fresh deployment
+    if (isFreshDeployment()) {
+      keyboard.push(['🔄 Restore My Account']);
+    }
     
     await ctx.reply(
       `🌟 \\*Welcome to Liteway VTU Bot\\!\\*\n\n` +
@@ -384,6 +433,9 @@ async function setupCommands(bot) {
     );
   });
   
+  // ================================================================
+  // SECTION 5.2: ADMIN COMMANDS
+  // ================================================================
   bot.command('credituser', async (ctx) => {
     const adminId = ctx.from.id.toString();
     if (!isAdmin(adminId)) {
@@ -523,6 +575,9 @@ async function setupCommands(bot) {
     await ctx.reply(`✅ Email set for user ${userId}: ${email}`);
   });
 
+  // ================================================================
+  // SECTION 5.3: USER COMMANDS
+  // ================================================================
   bot.command('profile', async (ctx) => {
     await showProfile(ctx);
   });
@@ -592,6 +647,9 @@ async function setupCommands(bot) {
     await ctx.reply(message, { parse_mode: 'MarkdownV2', ...Markup.inlineKeyboard(buttons) });
   });
   
+  // ================================================================
+  // SECTION 5.4: TRANSACTION COMMANDS
+  // ================================================================
   bot.command('transactions', handleAdminTransactionTracking);
   bot.command('failedtransactions', async (ctx) => {
     if (!isAdmin(ctx.from.id.toString())) return ctx.reply('❌ Admin only', { parse_mode: 'MarkdownV2' });
@@ -636,6 +694,9 @@ async function setupCommands(bot) {
     );
   });
   
+  // ================================================================
+  // SECTION 5.5: KORA TEST COMMAND
+  // ================================================================
   bot.command('testkora', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!isAdmin(userId)) {
@@ -680,6 +741,9 @@ async function setupCommands(bot) {
     }
   });
   
+  // ================================================================
+  // SECTION 5.6: PIN AND BALANCE COMMANDS
+  // ================================================================
   bot.command('setpin', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -703,6 +767,9 @@ async function setupCommands(bot) {
     await ctx.reply(`💰 \\*YOUR WALLET BALANCE\\*\n\n💵 Available: ${formatCurrency(user.wallet)}`, { parse_mode: 'MarkdownV2' });
   });
   
+  // ================================================================
+  // SECTION 5.7: DEVICE ADMIN COMMANDS
+  // ================================================================
   bot.command('devices', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -745,6 +812,10 @@ async function setupCommands(bot) {
   });
 }
 
+// ====================================================================
+// SECTION 6: MENU HANDLERS (HEARS COMMANDS)
+// ====================================================================
+
 async function setupMenuHandlers(bot) {
   const { getUsers, getSessions, getTransactions, setSessions } = require('./database');
   const { checkKYCAndPIN, formatCurrency, escapeMarkdownV2, isValidEmail, initUser } = require('./utils');
@@ -762,6 +833,9 @@ async function setupMenuHandlers(bot) {
   const buyExamPins = require('./app/Bill/exam');
   const buyCardPins = require('./app/Card pins/buyCardPins');
   
+  // ================================================================
+  // SECTION 6.1: DEVICE FINANCING MENU
+  // ================================================================
   bot.hears('📱 Device Financing', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -791,6 +865,9 @@ async function setupMenuHandlers(bot) {
     );
   });
   
+  // ================================================================
+  // SECTION 6.2: BILL PAYMENT MENUS
+  // ================================================================
   bot.hears('📺 TV Subscription', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -805,6 +882,9 @@ async function setupMenuHandlers(bot) {
     await buyElectricity.handleElectricity(ctx, getUsers(), sessionManager, require('./config').CONFIG);
   });
   
+  // ================================================================
+  // SECTION 6.3: AIRTIME AND DATA MENUS
+  // ================================================================
   bot.hears('📞 Buy Airtime', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -819,6 +899,9 @@ async function setupMenuHandlers(bot) {
     await buyData.handleData(ctx, getUsers(), sessionManager, require('./config').CONFIG, require('./config').NETWORK_CODES);
   });
   
+  // ================================================================
+  // SECTION 6.4: PIN PURCHASE MENUS
+  // ================================================================
   bot.hears('🎫 Card Pins', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -837,6 +920,9 @@ async function setupMenuHandlers(bot) {
     await ctx.reply('⚡ \\*LITE LIGHT\\*\n\n🚧 Coming Soon!', { parse_mode: 'MarkdownV2' });
   });
   
+  // ================================================================
+  // SECTION 6.5: MONEY TRANSFER MENU
+  // ================================================================
   bot.hears('🏦 Money Transfer', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -852,13 +938,24 @@ async function setupMenuHandlers(bot) {
     );
   });
   
+  // ================================================================
+  // SECTION 6.6: WALLET AND TRANSACTION MENUS
+  // ================================================================
   bot.hears('💰 Wallet Balance', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
     await ctx.reply(`💰 \\*YOUR WALLET BALANCE\\*\n\n💵 Available: ${formatCurrency(user.wallet)}`, { parse_mode: 'MarkdownV2' });
   });
   
-  // ========== DEPOSIT FUNDS HANDLER ==========
+  bot.hears('📜 Transaction History', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    await transactionHistory.handleHistory(ctx, getUsers(), getTransactions(), require('./config').CONFIG);
+  });
+  
+  // ================================================================
+  // SECTION 6.7: DEPOSIT FUNDS MENU
+  // ================================================================
   bot.hears('💳 Deposit Funds', async (ctx) => {
     const userId = ctx.from.id.toString();
     console.log(`🔥 DEPOSIT BUTTON CLICKED by user: ${userId}`);
@@ -917,12 +1014,9 @@ async function setupMenuHandlers(bot) {
     );
   });
   
-  bot.hears('📜 Transaction History', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    await initUser(userId);
-    await transactionHistory.handleHistory(ctx, getUsers(), getTransactions(), require('./config').CONFIG);
-  });
-  
+  // ================================================================
+  // SECTION 6.8: KYC STATUS MENU
+  // ================================================================
   bot.hears('🛂 KYC Status', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -940,6 +1034,9 @@ async function setupMenuHandlers(bot) {
     );
   });
   
+  // ================================================================
+  // SECTION 6.9: ADMIN PANEL MENU
+  // ================================================================
   bot.hears('🛠️ Admin Panel', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!require('./utils').isAdmin(userId)) return ctx.reply('❌ Admin only', { parse_mode: 'MarkdownV2' });
@@ -960,6 +1057,9 @@ async function setupMenuHandlers(bot) {
     );
   });
   
+  // ================================================================
+  // SECTION 6.10: PROFILE AND HELP MENUS
+  // ================================================================
   bot.hears('👤 Profile', async (ctx) => {
     await showProfile(ctx);
   });
@@ -982,11 +1082,17 @@ async function setupMenuHandlers(bot) {
     );
   });
 
-  // ========== UPGRADE/RESTORE BUTTON HANDLER ==========
+  // ================================================================
+  // SECTION 6.11: UPGRADE/RESTORE BUTTON HANDLER
+  // ================================================================
   bot.hears('🔄 Restore My Account', async (ctx) => {
     await handleRestoreButton(ctx);
   });
 }
+
+// ====================================================================
+// SECTION 7: CALLBACK HANDLERS (BUTTON ACTIONS)
+// ====================================================================
 
 async function setupCallbackHandlers(bot) {
   const { getUsers, getSessions, setSessions, getSystemTransactions, saveAllData } = require('./database');
@@ -1015,6 +1121,9 @@ async function setupCallbackHandlers(bot) {
   const buyElectricity = require('./app/Bill/light');
   const buyTVSubscription = require('./app/Bill/tv');
   
+  // ================================================================
+  // SECTION 7.1: MODULE CALLBACKS REGISTRATION
+  // ================================================================
   const airtimeCallbacks = buyAirtime.getCallbacks?.(bot, getUsers(), getSessions(), require('./config').CONFIG, require('./config').NETWORK_CODES) || {};
   const dataCallbacks = buyData.getCallbacks?.(bot, getUsers(), require('./handlers').sessionManager, require('./config').CONFIG) || {};
   const adminCallbacks = admin.getCallbacks?.(bot, getUsers(), require('./database').getTransactions(), require('./config').CONFIG) || {};
@@ -1025,6 +1134,9 @@ async function setupCallbackHandlers(bot) {
   const electricityCallbacks = buyElectricity.getCallbacks?.(bot, getUsers(), require('./handlers').sessionManager, require('./config').CONFIG) || {};
   const tvCallbacks = buyTVSubscription.getCallbacks?.(bot, getUsers(), require('./handlers').sessionManager, require('./config').CONFIG) || {};
   
+  // ================================================================
+  // SECTION 7.2: DEVICE CALLBACKS
+  // ================================================================
   const deviceCallbacks = getDeviceCallbacks() || {};
   Object.entries(deviceCallbacks).forEach(([pattern, handler]) => {
     try {
@@ -1038,6 +1150,9 @@ async function setupCallbackHandlers(bot) {
     } catch (e) { console.error(`❌ Device callback failed: ${pattern}`, e.message); }
   });
   
+  // ================================================================
+  // SECTION 7.3: MINI APP CALLBACKS
+  // ================================================================
   const miniAppCallbacks = getMiniAppCallbacks() || {};
   Object.entries(miniAppCallbacks).forEach(([pattern, handler]) => {
     try {
@@ -1049,6 +1164,9 @@ async function setupCallbackHandlers(bot) {
     } catch (e) { console.error(`❌ Mini App callback failed: ${pattern}`, e.message); }
   });
   
+  // ================================================================
+  // SECTION 7.4: CREDIT CONFIRMATION CALLBACKS
+  // ================================================================
   bot.action(/^confirm_credit:(.+)$/, async (ctx) => {
     const adminId = ctx.from.id.toString();
     if (!isAdmin(adminId)) {
@@ -1162,6 +1280,9 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
+  // ================================================================
+  // SECTION 7.5: COMBINED MODULE CALLBACKS
+  // ================================================================
   const allCallbacks = {
     ...airtimeCallbacks, ...dataCallbacks, ...adminCallbacks, ...kycCallbacks,
     ...sendMoneyCallbacks, ...cardPinCallbacks, ...examPinCallbacks,
@@ -1180,6 +1301,9 @@ async function setupCallbackHandlers(bot) {
     } catch (e) { console.error(`❌ Callback failed: ${pattern}`, e.message); }
   });
   
+  // ================================================================
+  // SECTION 7.6: ADMIN TRANSACTION CALLBACKS
+  // ================================================================
   bot.action('admin_transaction_tracking', async (ctx) => {
     await handleAdminTransactionTracking(ctx);
     await ctx.answerCbQuery();
@@ -1331,6 +1455,7 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
+  // Export callbacks
   ['today', 'failed', 'pending', 'api', 'all'].forEach(type => {
     bot.action(`admin_export_${type}_menu`, async (ctx) => {
       await exportManager.quickExport(ctx, type);
@@ -1376,6 +1501,9 @@ async function setupCallbackHandlers(bot) {
     });
   });
   
+  // ================================================================
+  // SECTION 7.7: ADMIN MANAGEMENT CALLBACKS
+  // ================================================================
   bot.action('admin_users', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!isAdmin(userId)) return ctx.answerCbQuery('❌ Admin only');
@@ -1458,13 +1586,16 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
+  // ================================================================
+  // SECTION 7.8: NAVIGATION CALLBACKS
+  // ================================================================
   bot.action('start', async (ctx) => {
     try { await ctx.deleteMessage(); } catch (e) {}
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
     const isUserAdmin = isAdmin(userId);
     
-    const keyboard = isUserAdmin ? [
+    let keyboard = isUserAdmin ? [
       ['📱 Device Financing', '📺 TV Subscription', '💡 Electricity Bill'],
       ['📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins'],
       ['📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer'],
@@ -1477,6 +1608,11 @@ async function setupCallbackHandlers(bot) {
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
       ['🛂 KYC Status', '👤 Profile', '🆘 Help & Support']
     ];
+    
+    // Add Restore button if fresh deployment
+    if (isFreshDeployment()) {
+      keyboard.push(['🔄 Restore My Account']);
+    }
     
     await ctx.reply(
       `🌟 \\*Welcome to Liteway VTU Bot\\!\\*\n\n` +
@@ -1505,6 +1641,9 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
+  // ================================================================
+  // SECTION 7.9: TRANSFER CALLBACKS
+  // ================================================================
   bot.action('bank_transfer', async (ctx) => {
     const usersForSendMoney = { ...getUsers(), ...userMethods };
     await systemTransactionManager.recordTransaction({
@@ -1520,13 +1659,17 @@ async function setupCallbackHandlers(bot) {
     const user = await initUser(userId);
     
     if (!user.phone) {
-      return ctx.reply('📱 Phone number required for Litemonie\n\nPlease set your phone number in profile first.', { parse_mode: 'MarkdownV2' });
+      await ctx.reply('📱 Phone number required for Litemonie\n\nPlease set your phone number in profile first.', { parse_mode: 'MarkdownV2' });
+      return ctx.answerCbQuery();
     }
     
     await sendMoney.handleLiteMoni(ctx, getUsers());
     await ctx.answerCbQuery();
   });
 
+  // ================================================================
+  // SECTION 7.10: PROFILE CALLBACKS
+  // ================================================================
   bot.action('refresh_profile', async (ctx) => {
     const { showProfile } = require('./profile');
     await ctx.answerCbQuery();
@@ -1538,7 +1681,9 @@ async function setupCallbackHandlers(bot) {
     await adminViewAllUsers(ctx);
   });
   
-  // ========== DEPOSIT CALLBACK HANDLERS ==========
+  // ================================================================
+  // SECTION 7.11: DEPOSIT CALLBACKS
+  // ================================================================
   bot.action('create_virtual_account', async (ctx) => {
     console.log('🟢 create_virtual_account callback triggered');
     await depositFunds.handleCreateVirtualAccount(ctx, {
@@ -1633,7 +1778,9 @@ async function setupCallbackHandlers(bot) {
     );
   });
 
-  // ========== UPGRADE RECOVERY CALLBACKS ==========
+  // ================================================================
+  // SECTION 7.12: UPGRADE RECOVERY CALLBACKS (FULLY INTEGRATED)
+  // ================================================================
   bot.action('upgrade_recovery', async (ctx) => {
     await handleUpgradeRecovery(ctx);
     await ctx.answerCbQuery();
@@ -1646,6 +1793,10 @@ async function setupCallbackHandlers(bot) {
   
   console.log('✅ All callbacks registered');
 }
+
+// ====================================================================
+// SECTION 8: WEBHOOK SETUP
+// ====================================================================
 
 async function setupWebhook(bot, webhookUrl) {
   try {
@@ -1667,6 +1818,10 @@ async function setupWebhook(bot, webhookUrl) {
     return false;
   }
 }
+
+// ====================================================================
+// SECTION 9: BOT LIFECYCLE MANAGEMENT
+// ====================================================================
 
 async function stopBot() {
   console.log('🛑 Stopping bot...');
@@ -1706,6 +1861,10 @@ async function getBotInfo() {
   }
 }
 
+// ====================================================================
+// SECTION 10: MAIN LAUNCH FUNCTION
+// ====================================================================
+
 async function launchBot(useWebhook = false) {
   try {
     botInstance = await createBot();
@@ -1714,8 +1873,9 @@ async function launchBot(useWebhook = false) {
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
-    // ========== FIXED TEXT HANDLER ==========
-    // This is the most important fix - properly routes LiteMoni text inputs
+    // ================================================================
+    // SECTION 10.1: TEXT HANDLER (ROUTES ALL TEXT INPUTS)
+    // ================================================================
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       if (text.startsWith('/')) return;
@@ -1768,7 +1928,7 @@ async function launchBot(useWebhook = false) {
         }
       }
       
-      // THIRD: Check for upgrade recovery session
+      // THIRD: Check for upgrade recovery session (FULLY INTEGRATED)
       const recoverySession = await getSession(userId);
       
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
@@ -1820,6 +1980,10 @@ async function launchBot(useWebhook = false) {
     throw error;
   }
 }
+
+// ====================================================================
+// SECTION 11: EXPORTS
+// ====================================================================
 
 module.exports = { 
   launchBot,
