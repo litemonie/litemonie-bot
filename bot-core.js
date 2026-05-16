@@ -34,7 +34,7 @@ const { Telegraf } = require('telegraf');
 const express = require('express');
 const path = require('path');
 const { CONFIG } = require('./config');
-const { initStorage, loadData, setupAutoSave, saveAllData, recordTransaction, getUsers, setUsers, getSessions, setSessions } = require('./database');
+const { initStorage, loadData, setupAutoSave, saveAllData, recordTransaction, getUsers, setUsers, getSessions, setSessions, getTransactions } = require('./database');
 const { initUser, isAdmin, formatCurrency, escapeMarkdownV2 } = require('./utils');
 const { initializeDeviceHandler, getDeviceHandler, getDeviceCallbacks, getDeviceLockApp, getMiniAppCallbacks } = require('./device-system');
 const { systemTransactionManager, analyticsManager } = require('./transaction-system');
@@ -1520,19 +1520,10 @@ async function setupCallbackHandlers(bot) {
     const user = await initUser(userId);
     
     if (!user.phone) {
-      return ctx.reply('📱 Phone number required for Litemonie', { parse_mode: 'MarkdownV2' });
+      return ctx.reply('📱 Phone number required for Litemonie\n\nPlease set your phone number in profile first.', { parse_mode: 'MarkdownV2' });
     }
     
-    await ctx.reply(
-      `📱 \\*LITEMONIE TRANSFER\\*\n\n📞 Your account: ${escapeMarkdownV2(user.phone)}\n` +
-      `💵 Balance: ${formatCurrency(user.wallet)}\n\nEnter recipient phone:`,
-      { parse_mode: 'MarkdownV2' }
-    );
-    
-    const sessions = getSessions();
-    sessions[userId] = { action: 'litemonie_transfer', step: 'enter_phone' };
-    setSessions(sessions);
-    await saveAllData();
+    await sendMoney.handleLiteMoni(ctx, getUsers());
     await ctx.answerCbQuery();
   });
 
@@ -1723,20 +1714,20 @@ async function launchBot(useWebhook = false) {
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
-    // ========== TEXT HANDLER ==========
+    // ========== FIXED TEXT HANDLER ==========
+    // This is the most important fix - properly routes LiteMoni text inputs
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       if (text.startsWith('/')) return;
       
       const userId = ctx.from.id.toString();
+      console.log(`📝 Handling text for user ${userId}: "${text}"`);
 
-      // Check depositFunds.sessionManager
+      // FIRST: Check for deposit session
       const depositSession = depositFunds.sessionManager.getSession(userId);
       
       if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
         console.log(`📝 Handling deposit text for user ${userId}: ${text}`);
-        console.log(`📊 Deposit session found:`, depositSession);
-        
         await depositFunds.handleDepositText(ctx, text, {
           findById: async (id) => {
             const users = getUsers();
@@ -1756,8 +1747,28 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
-      // ========== UPGRADE RECOVERY INPUT HANDLER ==========
-      // FIX: Use the getSession function we defined at the top of the file
+      // SECOND: Check for SendMoney session (LiteMoni or Bank Transfer)
+      const sendMoneySession = sendMoney.sessionManager.getSession(userId);
+      
+      if (sendMoneySession) {
+        console.log(`📝 Handling sendMoney text for user ${userId}`);
+        console.log(`📊 SendMoney session action: ${sendMoneySession.action}, step: ${sendMoneySession.step}`);
+        
+        const users = getUsers();
+        const transactions = getTransactions();
+        
+        const handled = await sendMoney.handleText(ctx, text, users, transactions);
+        
+        if (handled) {
+          console.log(`✅ SendMoney handled the text successfully`);
+          await saveAllData();
+          return;
+        } else {
+          console.log(`⚠️ SendMoney.handleText returned false`);
+        }
+      }
+      
+      // THIRD: Check for upgrade recovery session
       const recoverySession = await getSession(userId);
       
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
@@ -1766,7 +1777,8 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
-      // No deposit session — use regular text handler
+      // FOURTH: No session found - use regular text handler
+      console.log(`📝 No session found for user ${userId}, using regular handler`);
       await handleTextMessage(ctx, text);
     });
     
