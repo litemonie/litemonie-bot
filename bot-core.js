@@ -75,7 +75,8 @@ const {
   handleCancelRecovery, 
   handleRestoreButton, 
   isFreshDeployment,
-  getUpgradeSession 
+  getUpgradeSession,
+  addUpgradeButtonToMenu
 } = require('./upgrade');
 
 // ====================================================================
@@ -412,6 +413,9 @@ async function setupCommands(bot) {
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
       ['🛂 KYC Status', '👤 Profile', '🆘 Help & Support']
     ];
+// ========== ADD THIS LINE ==========
+  keyboard = addUpgradeButtonToMenu(keyboard);
+  // ===================================
     
     // Add Restore button if fresh deployment
     if (isFreshDeployment()) {
@@ -1608,6 +1612,10 @@ async function setupCallbackHandlers(bot) {
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
       ['🛂 KYC Status', '👤 Profile', '🆘 Help & Support']
     ];
+    
+// ========== ADD THIS LINE ==========
+  keyboard = addUpgradeButtonToMenu(keyboard);
+  // ===================================
     
     // Add Restore button if fresh deployment
     if (isFreshDeployment()) {
