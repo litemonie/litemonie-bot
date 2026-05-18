@@ -452,41 +452,21 @@ async function launchBot(useWebhook = false) {
     await setupCallbackHandlers(botInstance);
     
     // ================================================================
-    // SECTION 10.1: TEXT HANDLER - COMPLETE FIX
+    // SECTION 10.1: TEXT HANDLER - SIMPLE WORKING VERSION
     // ================================================================
     botInstance.on('text', async (ctx) => {
-      const text = ctx.message.text.trim();
-      const userId = ctx.from.id.toString();
+      const text = ctx.message.text;
       
-      // CRITICAL: Skip ALL command handling in text handler
-      // Let Telegraf's built-in handlers process commands and menu buttons
+      // Let commands pass through
       if (text.startsWith('/')) {
-        console.log(`📝 Command detected, skipping: ${text}`);
         return;
       }
       
-      // Check if this is a menu button - let menu handlers process it
-      const menuButtons = [
-        '📱 Device Financing', '📺 TV Subscription', '💡 Electricity Bill',
-        '📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins',
-        '📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer',
-        '💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History',
-        '🛂 KYC Status', '🛠️ Admin Panel', '👤 Profile', '🆘 Help & Support',
-        '🔄 Restore My Account'
-      ];
+      const userId = ctx.from.id.toString();
       
-      // If it's a menu button, let the menu handler process it
-      if (menuButtons.includes(text)) {
-        console.log(`📝 Menu button detected, letting menu handler process: ${text}`);
-        return;  // Exit - let setupMenuHandlers process it
-      }
-      
-      console.log(`📝 Processing text input: "${text}" for user ${userId}`);
-
-      // Check for active sessions (deposit, sendmoney, recovery)
+      // Only handle deposit sessions
       const depositSession = depositFunds.sessionManager.getSession(userId);
-      if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
-        console.log(`📝 Handling deposit session for user ${userId}`);
+      if (depositSession) {
         await depositFunds.handleDepositText(ctx, text, {
           findById: async (id) => {
             const users = getUsers();
@@ -506,34 +486,8 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
-      const sendMoneySession = sendMoney.sessionManager.getSession(userId);
-      if (sendMoneySession) {
-        console.log(`📝 Handling sendMoney session for user ${userId}`);
-        const handled = await sendMoney.handleText(ctx, text, getUsers(), getTransactions());
-        if (handled) {
-          await saveAllData();
-          return;
-        }
-      }
-      
-      const recoverySession = await getUpgradeSession(userId);
-      if (recoverySession && recoverySession.action === 'upgrade_recovery') {
-        console.log(`📝 Handling upgrade recovery session for user ${userId}`);
-        await processRecoveryInput(ctx, text);
-        return;
-      }
-      
-      // No active session - this is unexpected input
-      console.log(`📝 No session found for user ${userId}, showing help`);
-      await ctx.reply(
-        `🤔 *I didn't understand that*\n\nPlease select an option from the menu or use:\n\n` +
-        `/start - Main menu\n` +
-        `/balance - Check balance\n` +
-        `/setpin - Set transaction PIN\n` +
-        `/profile - View your profile\n\n` +
-        `📞 Need help? Contact @opuenekeke`,
-        { parse_mode: 'Markdown' }
-      );
+      // For everything else, do nothing
+      return;
     });
     
     botInstance.catch((err, ctx) => {
@@ -561,7 +515,8 @@ async function launchBot(useWebhook = false) {
     console.error('❌ Failed to launch bot:', error);
     throw error;
   }
-}
+} // <-- THIS CLOSES THE launchBot FUNCTION
+
 // ====================================================================
 // SECTION 11: EXPORTS
 // ====================================================================
