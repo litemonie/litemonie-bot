@@ -452,24 +452,41 @@ async function launchBot(useWebhook = false) {
     await setupCallbackHandlers(botInstance);
     
     // ================================================================
-    // SECTION 10.1: TEXT HANDLER - FIXED FOR COMMANDS
+    // SECTION 10.1: TEXT HANDLER - COMPLETE FIX
     // ================================================================
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
+      const userId = ctx.from.id.toString();
       
-      // CRITICAL FIX: Let commands pass through to command handlers
-      // Don't process anything that starts with '/'
+      // CRITICAL: Skip ALL command handling in text handler
+      // Let Telegraf's built-in handlers process commands and menu buttons
       if (text.startsWith('/')) {
-        console.log(`📝 Command detected, skipping text handler: ${text}`);
-        return;  // Exit here - let the command handlers process it
+        console.log(`📝 Command detected, skipping: ${text}`);
+        return;
       }
       
-      const userId = ctx.from.id.toString();
-      console.log(`📝 Handling text: "${text}" for user ${userId}`);
+      // Check if this is a menu button - let menu handlers process it
+      const menuButtons = [
+        '📱 Device Financing', '📺 TV Subscription', '💡 Electricity Bill',
+        '📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins',
+        '📝 Exam Pins', '⚡ Lite Light', '🏦 Money Transfer',
+        '💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History',
+        '🛂 KYC Status', '🛠️ Admin Panel', '👤 Profile', '🆘 Help & Support',
+        '🔄 Restore My Account'
+      ];
+      
+      // If it's a menu button, let the menu handler process it
+      if (menuButtons.includes(text)) {
+        console.log(`📝 Menu button detected, letting menu handler process: ${text}`);
+        return;  // Exit - let setupMenuHandlers process it
+      }
+      
+      console.log(`📝 Processing text input: "${text}" for user ${userId}`);
 
-      // FIRST: Check for deposit session
+      // Check for active sessions (deposit, sendmoney, recovery)
       const depositSession = depositFunds.sessionManager.getSession(userId);
       if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
+        console.log(`📝 Handling deposit session for user ${userId}`);
         await depositFunds.handleDepositText(ctx, text, {
           findById: async (id) => {
             const users = getUsers();
@@ -489,9 +506,9 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
-      // SECOND: Check for SendMoney session (LiteMoni or Bank Transfer)
       const sendMoneySession = sendMoney.sessionManager.getSession(userId);
       if (sendMoneySession) {
+        console.log(`📝 Handling sendMoney session for user ${userId}`);
         const handled = await sendMoney.handleText(ctx, text, getUsers(), getTransactions());
         if (handled) {
           await saveAllData();
@@ -499,21 +516,29 @@ async function launchBot(useWebhook = false) {
         }
       }
       
-      // THIRD: Check for upgrade recovery session
       const recoverySession = await getUpgradeSession(userId);
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
+        console.log(`📝 Handling upgrade recovery session for user ${userId}`);
         await processRecoveryInput(ctx, text);
         return;
       }
       
-      // FOURTH: No session found - use regular text handler
-      console.log(`📝 No session found for user ${userId}, using regular handler`);
-      await handleTextMessage(ctx, text);
+      // No active session - this is unexpected input
+      console.log(`📝 No session found for user ${userId}, showing help`);
+      await ctx.reply(
+        `🤔 *I didn't understand that*\n\nPlease select an option from the menu or use:\n\n` +
+        `/start - Main menu\n` +
+        `/balance - Check balance\n` +
+        `/setpin - Set transaction PIN\n` +
+        `/profile - View your profile\n\n` +
+        `📞 Need help? Contact @opuenekeke`,
+        { parse_mode: 'Markdown' }
+      );
     });
     
     botInstance.catch((err, ctx) => {
       console.error('❌ Global Error:', err);
-      ctx.reply('❌ An error occurred').catch(() => {});
+      ctx.reply('❌ An error occurred. Please try again.').catch(() => {});
     });
     
     const PORT = process.env.PORT || 3000;
