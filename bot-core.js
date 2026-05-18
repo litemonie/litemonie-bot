@@ -451,14 +451,23 @@ async function launchBot(useWebhook = false) {
     await setupMenuHandlers(botInstance);
     await setupCallbackHandlers(botInstance);
     
-    // TEXT HANDLER
+    // ================================================================
+    // SECTION 10.1: TEXT HANDLER - FIXED FOR COMMANDS
+    // ================================================================
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
-      if (text.startsWith('/')) return;
+      
+      // CRITICAL FIX: Let commands pass through to command handlers
+      // Don't process anything that starts with '/'
+      if (text.startsWith('/')) {
+        console.log(`📝 Command detected, skipping text handler: ${text}`);
+        return;  // Exit here - let the command handlers process it
+      }
       
       const userId = ctx.from.id.toString();
       console.log(`📝 Handling text: "${text}" for user ${userId}`);
 
+      // FIRST: Check for deposit session
       const depositSession = depositFunds.sessionManager.getSession(userId);
       if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
         await depositFunds.handleDepositText(ctx, text, {
@@ -480,6 +489,7 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
+      // SECOND: Check for SendMoney session (LiteMoni or Bank Transfer)
       const sendMoneySession = sendMoney.sessionManager.getSession(userId);
       if (sendMoneySession) {
         const handled = await sendMoney.handleText(ctx, text, getUsers(), getTransactions());
@@ -489,12 +499,15 @@ async function launchBot(useWebhook = false) {
         }
       }
       
+      // THIRD: Check for upgrade recovery session
       const recoverySession = await getUpgradeSession(userId);
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
         await processRecoveryInput(ctx, text);
         return;
       }
       
+      // FOURTH: No session found - use regular text handler
+      console.log(`📝 No session found for user ${userId}, using regular handler`);
       await handleTextMessage(ctx, text);
     });
     
@@ -524,7 +537,6 @@ async function launchBot(useWebhook = false) {
     throw error;
   }
 }
-
 // ====================================================================
 // SECTION 11: EXPORTS
 // ====================================================================
