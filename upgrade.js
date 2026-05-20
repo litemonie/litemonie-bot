@@ -5,6 +5,8 @@
 const { Markup } = require('telegraf');
 const { getUsers, setUsers, saveAllData, loadFromBackup, getVirtualAccounts, setVirtualAccounts, getTransactions, setTransactions } = require('./database');
 const { initUser, formatCurrency } = require('./utils');
+const fs = require('fs');
+const path = require('path');
 
 // ============ SESSION MANAGEMENT FOR UPGRADE ============
 const upgradeSessions = {};
@@ -23,27 +25,116 @@ async function clearUpgradeSession(userId) {
 }
 // ============ END SESSION MANAGEMENT ============
 
-// ============ FIXED: ALWAYS SHOW RESTORE BUTTON ============
-// Changed from checking user count to always showing the button
-// This ensures all users can access account recovery
+// ============ IMPROVED: LOAD BACKUP FROM MULTIPLE LOCATIONS ============
+async function loadBackupData() {
+    console.log('🔍 Searching for backup data...');
+    
+    // Try multiple backup sources
+    let backupData = null;
+    
+    // 1. Try loadFromBackup from database module
+    try {
+        backupData = await loadFromBackup();
+        if (backupData && backupData.users && Object.keys(backupData.users).length > 0) {
+            console.log(`✅ Found backup via loadFromBackup(): ${Object.keys(backupData.users).length} users`);
+            return backupData;
+        }
+    } catch (error) {
+        console.log('loadFromBackup() failed:', error.message);
+    }
+    
+    // 2. Try reading from backups directory
+    const backupDirs = [
+        path.join(process.cwd(), 'backups'),
+        path.join(process.cwd(), 'data', 'backups'),
+        path.join(__dirname, '..', 'backups'),
+        path.join(__dirname, 'backups')
+    ];
+    
+    for (const backupDir of backupDirs) {
+        if (fs.existsSync(backupDir)) {
+            console.log(`📁 Checking backup directory: ${backupDir}`);
+            const files = fs.readdirSync(backupDir);
+            const backupFiles = files.filter(f => f.endsWith('.json') && (f.includes('backup') || f.includes('users')));
+            
+            // Sort by most recent (assuming timestamp in filename)
+            backupFiles.sort().reverse();
+            
+            for (const file of backupFiles) {
+                try {
+                    const filePath = path.join(backupDir, file);
+                    console.log(`📄 Reading backup file: ${file}`);
+                    const content = fs.readFileSync(filePath, 'utf8');
+                    const data = JSON.parse(content);
+                    
+                    if (data.users && Object.keys(data.users).length > 0) {
+                        console.log(`✅ Found backup in ${file}: ${Object.keys(data.users).length} users`);
+                        return data;
+                    }
+                    if (data.data && data.data.users && Object.keys(data.data.users).length > 0) {
+                        console.log(`✅ Found backup in ${file} (nested): ${Object.keys(data.data.users).length} users`);
+                        return data.data;
+                    }
+                } catch (err) {
+                    console.log(`Error reading ${file}:`, err.message);
+                }
+            }
+        }
+    }
+    
+    // 3. Try reading from main data files (users.json, virtualAccounts.json, transactions.json)
+    const dataFiles = [
+        { path: path.join(process.cwd(), 'data', 'users.json'), type: 'users' },
+        { path: path.join(process.cwd(), 'users.json'), type: 'users' },
+        { path: path.join(process.cwd(), 'data', 'virtual_accounts.json'), type: 'virtualAccounts' },
+        { path: path.join(process.cwd(), 'data', 'transactions.json'), type: 'transactions' }
+    ];
+    
+    let combinedData = { users: {}, virtualAccounts: {}, transactions: {} };
+    
+    for (const file of dataFiles) {
+        if (fs.existsSync(file.path)) {
+            try {
+                console.log(`📄 Reading data file: ${file.path}`);
+                const content = fs.readFileSync(file.path, 'utf8');
+                const data = JSON.parse(content);
+                
+                if (file.type === 'users') {
+                    combinedData.users = { ...combinedData.users, ...data };
+                } else if (file.type === 'virtualAccounts') {
+                    combinedData.virtualAccounts = { ...combinedData.virtualAccounts, ...data };
+                } else if (file.type === 'transactions') {
+                    combinedData.transactions = { ...combinedData.transactions, ...data };
+                }
+            } catch (err) {
+                console.log(`Error reading ${file.path}:`, err.message);
+            }
+        }
+    }
+    
+    if (Object.keys(combinedData.users).length > 0) {
+        console.log(`✅ Found ${Object.keys(combinedData.users).length} users in data files`);
+        return combinedData;
+    }
+    
+    console.log('❌ No backup data found anywhere');
+    return null;
+}
+
+// ============ ALWAYS SHOW RESTORE BUTTON ============
 function isFreshDeployment() {
-    // ALWAYS return true to show the restore button
-    // Users can choose to restore if they lost data
     return true;
 }
 
-// Get menu button - NOW ALWAYS RETURNS BUTTON
 function getUpgradeButton() {
-    // Always return the restore button
     return [Markup.button.callback('🔄 RESTORE MY ACCOUNT', 'upgrade_recovery')];
 }
 
-// Main recovery handler
+// ============ MAIN RECOVERY HANDLER ============
 async function handleUpgradeRecovery(ctx) {
     const userId = ctx.from.id.toString();
     console.log(`🔧 Upgrade recovery triggered by user: ${userId}`);
     
-    // Check if user already has data - don't block recovery, just inform
     const users = getUsers();
     const currentUser = users[userId];
     
@@ -70,27 +161,26 @@ async function handleUpgradeRecovery(ctx) {
         }
     );
     
-    // Set session for recovery
     await setUpgradeSession(userId, { action: 'upgrade_recovery', step: 'waiting_for_input' });
 }
 
-// Process recovery input (email or phone)
+// ============ IMPROVED: PROCESS RECOVERY INPUT ============
 async function processRecoveryInput(ctx, text) {
     const userId = ctx.from.id.toString();
     const input = text.trim().toLowerCase();
     
     console.log(`🔍 Processing recovery input for ${userId}: ${input}`);
     
-    // Check for cancel command
     if (text === '/cancel') {
         await handleCancelRecovery(ctx);
         return true;
     }
     
-    // Try to load from backup
-    const backupData = await loadFromBackup();
+    // Load backup data
+    const backupData = await loadBackupData();
     
     if (!backupData || !backupData.users || Object.keys(backupData.users).length === 0) {
+        console.log('❌ No backup data available');
         await ctx.reply(
             `❌ *NO BACKUP FOUND*\n\n` +
             `No backup data is available at this time.\n\n` +
@@ -102,19 +192,28 @@ async function processRecoveryInput(ctx, text) {
         return false;
     }
     
+    console.log(`📊 Backup contains ${Object.keys(backupData.users).length} users`);
+    
     // Search for user in backup by email or phone
     let foundUserId = null;
     let foundUserData = null;
-    let foundVirtualAccount = null;
     
+    // Debug: Log all users in backup
+    console.log('📋 Users in backup:');
+    for (const [backupId, backupUser] of Object.entries(backupData.users)) {
+        console.log(`   - ${backupId}: Email: ${backupUser.email || 'none'}, Phone: ${backupUser.phone || 'none'}, Name: ${backupUser.firstName || ''} ${backupUser.lastName || ''}`);
+    }
+    
+    // Search by email OR phone (either one)
     for (const [backupId, backupUser] of Object.entries(backupData.users)) {
         const email = backupUser.email?.toLowerCase() || '';
         const phone = backupUser.phone || '';
         
+        // Check if input matches email OR phone (not both required)
         if (email === input || phone === input) {
             foundUserId = backupId;
             foundUserData = backupUser;
-            console.log(`✅ Found user in backup: ${backupId} (Email: ${email}, Phone: ${phone})`);
+            console.log(`✅ Found user in backup by ${email === input ? 'email' : 'phone'}: ${backupId}`);
             break;
         }
     }
@@ -129,17 +228,15 @@ async function processRecoveryInput(ctx, text) {
     }
     
     if (foundUserData && foundUserId) {
-        // Get current users
+        console.log(`🔄 Restoring user ${userId} from backup user ${foundUserId}`);
+        
         const currentUsers = getUsers();
         const currentVirtualAccounts = getVirtualAccounts();
         
-        // Store old balance for message
         const oldBalance = currentUsers[userId]?.wallet || 0;
-        
-        // Restore user data
         const restoredBalance = foundUserData.wallet || 0;
         
-        // Preserve existing data if any
+        // Restore user data
         currentUsers[userId] = {
             ...currentUsers[userId],
             wallet: restoredBalance,
@@ -155,12 +252,12 @@ async function processRecoveryInput(ctx, text) {
         };
         
         setUsers(currentUsers);
+        console.log(`✅ User data restored: Balance ₦${restoredBalance}, Email: ${foundUserData.email}, Phone: ${foundUserData.phone}`);
         
         // Restore virtual account if exists
         if (backupData.virtualAccounts) {
             for (const [vaId, va] of Object.entries(backupData.virtualAccounts)) {
                 if (va.user_id === foundUserId) {
-                    // Check if virtual account already exists for this user
                     let existingVA = null;
                     for (const [existingId, existing] of Object.entries(currentVirtualAccounts)) {
                         if (existing.user_id === userId) {
@@ -185,20 +282,19 @@ async function processRecoveryInput(ctx, text) {
                         const newId = `va_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
                         allVAs[newId] = newVA;
                         setVirtualAccounts(allVAs);
-                        console.log(`✅ Virtual account restored for user ${userId}`);
+                        console.log(`✅ Virtual account restored: ${va.account_number}`);
                     }
                     break;
                 }
             }
         }
         
-        // Restore user's transactions from backup
+        // Restore transactions
         if (backupData.transactions && backupData.transactions[foundUserId]) {
             const currentTransactions = getTransactions();
             if (!currentTransactions[userId]) {
                 currentTransactions[userId] = [];
             }
-            // Merge transactions, avoiding duplicates
             const existingTxIds = new Set(currentTransactions[userId].map(tx => tx.date + tx.amount));
             const newTransactions = backupData.transactions[foundUserId].filter(tx => {
                 const key = tx.date + tx.amount;
@@ -206,7 +302,7 @@ async function processRecoveryInput(ctx, text) {
             });
             currentTransactions[userId] = [...currentTransactions[userId], ...newTransactions];
             setTransactions(currentTransactions);
-            console.log(`✅ Restored ${newTransactions.length} transactions for user ${userId}`);
+            console.log(`✅ Restored ${newTransactions.length} transactions`);
         }
         
         await saveAllData();
@@ -225,11 +321,24 @@ async function processRecoveryInput(ctx, text) {
         
         await ctx.reply(message, { parse_mode: 'Markdown' });
         
-        // Clear recovery session
         await clearUpgradeSession(userId);
-        
         return true;
+        
     } else {
+        console.log(`❌ No user found with email/phone: ${input}`);
+        
+        // Show available emails/phones from backup for debugging (remove in production)
+        const availableContacts = [];
+        for (const [backupId, backupUser] of Object.entries(backupData.users)) {
+            if (backupUser.email) availableContacts.push(backupUser.email);
+            if (backupUser.phone) availableContacts.push(backupUser.phone);
+        }
+        
+        let debugInfo = '';
+        if (process.env.NODE_ENV !== 'production') {
+            debugInfo = `\n\n🔍 *Available in backup:*\n${availableContacts.slice(0, 5).join(', ')}`;
+        }
+        
         await ctx.reply(
             `❌ *ACCOUNT NOT FOUND*\n\n` +
             `We couldn't find an account with:\n` +
@@ -240,47 +349,41 @@ async function processRecoveryInput(ctx, text) {
             `• No backup exists for this account\n\n` +
             `📞 Please contact support @opuenekeke for assistance.\n\n` +
             `📝 *Your User ID:* \`${userId}\`\n\n` +
-            `🔄 Try again with a different email/phone:`,
+            `🔄 Try again with a different email/phone:${debugInfo}`,
             { parse_mode: 'Markdown' }
         );
         return false;
     }
 }
 
-// Cancel recovery
+// ============ CANCEL RECOVERY ============
 async function handleCancelRecovery(ctx) {
     const userId = ctx.from.id.toString();
     await clearUpgradeSession(userId);
     
     try {
-        // Try to edit if it's a callback message
         if (ctx.callbackQuery) {
             await ctx.editMessageText(
-                `❌ *Recovery Cancelled*\n\n` +
-                `You can use /start to access the main menu.`,
+                `❌ *Recovery Cancelled*\n\nYou can use /start to access the main menu.`,
                 { parse_mode: 'Markdown' }
             );
             await ctx.answerCbQuery().catch(() => {});
         } else {
             await ctx.reply(
-                `❌ *Recovery Cancelled*\n\n` +
-                `You can use /start to access the main menu.`,
+                `❌ *Recovery Cancelled*\n\nYou can use /start to access the main menu.`,
                 { parse_mode: 'Markdown' }
             );
         }
     } catch (error) {
         await ctx.reply(
-            `❌ *Recovery Cancelled*\n\n` +
-            `You can use /start to access the main menu.`,
+            `❌ *Recovery Cancelled*\n\nYou can use /start to access the main menu.`,
             { parse_mode: 'Markdown' }
         );
     }
 }
 
-// Add the upgrade button to main menu
+// ============ ADD UPGRADE BUTTON TO MENU ============
 function addUpgradeButtonToMenu(keyboard) {
-    // ALWAYS add the restore button to the bottom of the menu
-    // Check if it already exists to avoid duplicates
     const hasRestoreButton = keyboard.some(row => 
         row.includes('🔄 Restore My Account')
     );
@@ -291,12 +394,11 @@ function addUpgradeButtonToMenu(keyboard) {
     return keyboard;
 }
 
-// Handle the "🔄 Restore My Account" button press
 async function handleRestoreButton(ctx) {
     await handleUpgradeRecovery(ctx);
 }
 
-// Export functions
+// ============ EXPORTS ============
 module.exports = {
     getUpgradeButton,
     handleUpgradeRecovery,
@@ -305,5 +407,6 @@ module.exports = {
     handleRestoreButton,
     addUpgradeButtonToMenu,
     isFreshDeployment,
-    getUpgradeSession
+    getUpgradeSession,
+    loadBackupData  // Export for debugging
 };
