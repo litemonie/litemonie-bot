@@ -1,5 +1,5 @@
 // ====================================================================
-// SECTION 1: BOT-CORE.JS - COMPLETE WORKING VERSION
+// SECTION 1: BOT-CORE.JS - MAIN BOT INITIALIZATION
 // ====================================================================
 
 // ====================================================================
@@ -64,7 +64,7 @@ const transactionHistory = require('./app/transactionHistory');
 const { showProfile } = require('./profile');
 
 // ====================================================================
-// SECTION 1.4: UPGRADE RECOVERY IMPORTS
+// SECTION 1.4: UPGRADE RECOVERY IMPORTS - FIXED
 // ====================================================================
 const { 
   handleUpgradeRecovery, 
@@ -261,23 +261,19 @@ async function setupCommands(bot) {
 }
 
 // ====================================================================
-// SECTION 6: MENU HANDLERS (ALL BUTTONS)
+// SECTION 6: MENU HANDLERS
 // ====================================================================
 async function setupMenuHandlers(bot) {
-  // Device Financing
   bot.hears('📱 Device Financing', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
     if (!await checkKYCAndPIN(userId, ctx)) return;
-    
     const deviceHandler = getDeviceHandler();
     if (!deviceHandler) return ctx.reply('❌ System error');
-    
     deviceHandler.users = getUsers();
     await deviceHandler.handleDeviceMenu(ctx);
   });
   
-  // TV Subscription
   bot.hears('📺 TV Subscription', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -285,7 +281,6 @@ async function setupMenuHandlers(bot) {
     await buyTVSubscription.handleTVSubscription(ctx, getUsers(), sessionManager, CONFIG);
   });
   
-  // Electricity Bill
   bot.hears('💡 Electricity Bill', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -293,7 +288,6 @@ async function setupMenuHandlers(bot) {
     await buyElectricity.handleElectricity(ctx, getUsers(), sessionManager, CONFIG);
   });
   
-  // Buy Airtime
   bot.hears('📞 Buy Airtime', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -301,7 +295,6 @@ async function setupMenuHandlers(bot) {
     await buyAirtime.handleAirtime(ctx, getUsers(), getSessions(), CONFIG, require('./config').NETWORK_CODES);
   });
   
-  // Buy Data
   bot.hears('📡 Buy Data', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -309,7 +302,6 @@ async function setupMenuHandlers(bot) {
     await buyData.handleData(ctx, getUsers(), sessionManager, CONFIG, require('./config').NETWORK_CODES);
   });
   
-  // Card Pins
   bot.hears('🎫 Card Pins', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -317,7 +309,6 @@ async function setupMenuHandlers(bot) {
     await buyCardPins.handleCardPinsMenu(ctx, getUsers(), sessionManager, CONFIG);
   });
   
-  // Exam Pins
   bot.hears('📝 Exam Pins', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -325,17 +316,14 @@ async function setupMenuHandlers(bot) {
     await buyExamPins.handleExamPins(ctx, getUsers(), sessionManager, CONFIG);
   });
   
-  // Lite Light
   bot.hears('⚡ Lite Light', async (ctx) => {
     await ctx.reply('⚡ Lite Light\n\n🚧 Coming Soon!');
   });
   
-  // Money Transfer
   bot.hears('🏦 Money Transfer', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
     if (!await checkKYCAndPIN(userId, ctx)) return;
-    
     await ctx.reply(
       '🏦 SEND MONEY\n\nChoose transfer method:',
       { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
@@ -346,35 +334,28 @@ async function setupMenuHandlers(bot) {
     );
   });
   
-  // Wallet Balance
   bot.hears('💰 Wallet Balance', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
     await ctx.reply(`💰 Your balance: ${formatCurrency(user.wallet)}`);
   });
   
-  // Deposit Funds
   bot.hears('💳 Deposit Funds', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
-    
     if ((user.kycStatus || 'pending') !== 'approved') {
       return ctx.reply('❌ KYC Verification Required. Please complete KYC first.');
     }
-    
     const needsEmail = !user.email;
     const needsPhone = !user.phone;
-    
     if (needsEmail) {
       depositFunds.sessionManager.startSession(userId, 'collect_email');
       return ctx.reply('📧 Email Required\n\nPlease enter your email address:');
     }
-    
     if (needsPhone) {
       depositFunds.sessionManager.startSession(userId, 'collect_phone');
       return ctx.reply(`📱 Phone Required\n\nEmail: ${user.email}\n\nPlease enter your phone number:`);
     }
-    
     await ctx.reply(
       `🏦 DEPOSIT FUNDS\n\n👤 User ID: ${userId}\n💰 Balance: ${formatCurrency(user.wallet || 0)}\n\n📧 Email: ${user.email}\n📱 Phone: ${user.phone}`,
       { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
@@ -385,14 +366,12 @@ async function setupMenuHandlers(bot) {
     );
   });
   
-  // Transaction History
   bot.hears('📜 Transaction History', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
     await transactionHistory.handleHistory(ctx, getUsers(), getTransactions(), CONFIG);
   });
   
-  // KYC Status
   bot.hears('🛂 KYC Status', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -400,11 +379,9 @@ async function setupMenuHandlers(bot) {
     await ctx.reply(`🛂 KYC STATUS\n\nStatus: ${statusEmoji} ${(user.kycStatus || 'pending').toUpperCase()}`);
   });
   
-  // Admin Panel
   bot.hears('🛠️ Admin Panel', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!isAdmin(userId)) return ctx.reply('❌ Admin only');
-    
     await ctx.reply(
       '🛠️ ADMIN PANEL\n\nAdministrator Controls',
       { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
@@ -417,19 +394,14 @@ async function setupMenuHandlers(bot) {
     );
   });
   
-  // Profile
   bot.hears('👤 Profile', async (ctx) => {
     await showProfile(ctx);
   });
   
-  // Help & Support
   bot.hears('🆘 Help & Support', async (ctx) => {
-    await ctx.reply(
-      `🆘 HELP & SUPPORT\n\nCommands:\n/start - Main menu\n/setpin 1234 - Set PIN\n/balance - Check balance\n/profile - View profile\n\n📞 Support: @opuenekeke`
-    );
+    await ctx.reply(`🆘 HELP & SUPPORT\n\nCommands:\n/start - Main menu\n/setpin 1234 - Set PIN\n/balance - Check balance\n/profile - View profile\n\n📞 Support: @opuenekeke`);
   });
   
-  // Restore My Account
   bot.hears('🔄 Restore My Account', async (ctx) => {
     await handleRestoreButton(ctx);
   });
@@ -439,13 +411,11 @@ async function setupMenuHandlers(bot) {
 // SECTION 7: CALLBACK HANDLERS
 // ====================================================================
 async function setupCallbackHandlers(bot) {
-  // Bank Transfer
   bot.action('bank_transfer', async (ctx) => {
     await sendMoney.handleSendMoney(ctx, { ...getUsers(), ...userMethods }, transactionMethods);
     await ctx.answerCbQuery();
   });
   
-  // LiteMoni Transfer
   bot.action('litemonie_transfer', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -457,13 +427,11 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
-  // Start/Home
   bot.action('start', async (ctx) => {
     try { await ctx.deleteMessage(); } catch (e) {}
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
     const isUserAdmin = isAdmin(userId);
-    
     let keyboard = isUserAdmin ? [
       ['📱 Device Financing', '📺 TV Subscription', '💡 Electricity Bill'],
       ['📞 Buy Airtime', '📡 Buy Data', '🎫 Card Pins'],
@@ -477,9 +445,7 @@ async function setupCallbackHandlers(bot) {
       ['💰 Wallet Balance', '💳 Deposit Funds', '📜 Transaction History'],
       ['🛂 KYC Status', '👤 Profile', '🆘 Help & Support']
     ];
-    
     keyboard = addUpgradeButtonToMenu(keyboard);
-    
     await ctx.reply(
       `🌟 Welcome to Liteway VTU Bot!\n\n🛂 KYC: ${(user.kycStatus || 'pending').toUpperCase()}\n💵 Wallet: ${formatCurrency(user.wallet)}\n\nSelect an option from the menu:`,
       { parse_mode: 'Markdown', ...Markup.keyboard(keyboard).resize() }
@@ -487,7 +453,6 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
-  // Upgrade Recovery
   bot.action('upgrade_recovery', async (ctx) => {
     await handleUpgradeRecovery(ctx);
     await ctx.answerCbQuery();
@@ -498,13 +463,12 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
-  // Deposit Callbacks
+  bot.action('no_action', ctx => ctx.answerCbQuery());
+  
+  // Deposit callbacks
   bot.action('create_virtual_account', async (ctx) => {
     await depositFunds.handleCreateVirtualAccount(ctx, {
-      findById: async (id) => {
-        const users = getUsers();
-        return users[id] || null;
-      }
+      findById: async (id) => { const users = getUsers(); return users[id] || null; }
     }, virtualAccounts, bot);
   });
   
@@ -518,10 +482,7 @@ async function setupCallbackHandlers(bot) {
   
   bot.action('change_email', async (ctx) => {
     await depositFunds.handleChangeEmail(ctx, {
-      findById: async (id) => {
-        const users = getUsers();
-        return users[id] || null;
-      }
+      findById: async (id) => { const users = getUsers(); return users[id] || null; }
     });
   });
   
@@ -531,47 +492,33 @@ async function setupCallbackHandlers(bot) {
   
   bot.action('check_balance', async (ctx) => {
     await depositFunds.handleCheckBalance(ctx, {
-      findById: async (id) => {
-        const users = getUsers();
-        return users[id] || null;
-      }
+      findById: async (id) => { const users = getUsers(); return users[id] || null; }
     }, virtualAccounts);
   });
   
   bot.action('view_my_account', async (ctx) => {
     await depositFunds.handleViewMyAccount(ctx, {
-      findById: async (id) => {
-        const users = getUsers();
-        return users[id] || null;
-      }
+      findById: async (id) => { const users = getUsers(); return users[id] || null; }
     }, virtualAccounts);
   });
   
   bot.action('force_new_account', async (ctx) => {
     await depositFunds.handleForceNewAccount(ctx, {
-      findById: async (id) => {
-        const users = getUsers();
-        return users[id] || null;
-      }
+      findById: async (id) => { const users = getUsers(); return users[id] || null; }
     }, virtualAccounts, bot);
   });
   
   bot.action('retrieve_account', async (ctx) => {
     await depositFunds.handleRetrieveAccount(ctx, {
-      findById: async (id) => {
-        const users = getUsers();
-        return users[id] || null;
-      }
+      findById: async (id) => { const users = getUsers(); return users[id] || null; }
     }, virtualAccounts, bot);
   });
   
-  // Admin Callbacks
+  // Admin callbacks
   bot.action('admin_users', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!isAdmin(userId)) return ctx.answerCbQuery('❌ Admin only');
-    const users = getUsers();
-    const total = Object.keys(users).length;
-    await ctx.reply(`👥 USERS\n\nTotal users: ${total}`);
+    await ctx.reply(`👥 USERS\n\nTotal users: ${Object.keys(getUsers()).length}`);
     await ctx.answerCbQuery();
   });
   
@@ -593,8 +540,6 @@ async function setupCallbackHandlers(bot) {
     await ctx.reply('🛂 KYC Approvals\n\nUse /searchuser to find users');
     await ctx.answerCbQuery();
   });
-  
-  bot.action('no_action', ctx => ctx.answerCbQuery());
 }
 
 // ====================================================================
@@ -639,28 +584,30 @@ async function launchBot(useWebhook = false) {
     await setupCallbackHandlers(botInstance);
     
     // ================================================================
-    // SECTION 10.1: TEXT HANDLER - PROPER ORDER
+    // SECTION 10.1: TEXT HANDLER - UPGRADE RECOVERY PRIORITY FIXED
     // ================================================================
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
-      
       if (text.startsWith('/')) return;
       
       const userId = ctx.from.id.toString();
-      console.log(`📝 Text: "${text}" from ${userId}`);
+      console.log(`📝 Text received: "${text}" from ${userId}`);
 
-      // 1. UPGRADE RECOVERY (HIGHEST PRIORITY)
+      // ========== 1. UPGRADE RECOVERY (HIGHEST PRIORITY) ==========
+      // FIXED: Use getUpgradeSession instead of getSession
       const recoverySession = await getUpgradeSession(userId);
+      
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
-        console.log(`🔄 Upgrade recovery active`);
+        console.log(`🔄 Upgrade recovery active - routing to recovery handler`);
         await processRecoveryInput(ctx, text);
         return;
       }
 
-      // 2. DEPOSIT SESSION
+      // ========== 2. DEPOSIT SESSION ==========
       const depositSession = depositFunds.sessionManager.getSession(userId);
+      
       if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
-        console.log(`💰 Deposit session active`);
+        console.log(`💰 Deposit session active - routing to deposit handler`);
         await depositFunds.handleDepositText(ctx, text, {
           findById: async (id) => {
             const users = getUsers();
@@ -680,10 +627,11 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
-      // 3. SENDMONEY SESSION
+      // ========== 3. SENDMONEY SESSION ==========
       const sendMoneySession = sendMoney.sessionManager.getSession(userId);
+      
       if (sendMoneySession) {
-        console.log(`💸 SendMoney session active`);
+        console.log(`💸 SendMoney session active - routing to sendMoney handler`);
         const handled = await sendMoney.handleText(ctx, text, getUsers(), getTransactions());
         if (handled) {
           await saveAllData();
@@ -691,8 +639,8 @@ async function launchBot(useWebhook = false) {
         }
       }
       
-      // 4. REGULAR HANDLER
-      console.log(`ℹ️ No active session`);
+      // ========== 4. NO ACTIVE SESSION ==========
+      console.log(`ℹ️ No active session for ${userId} - using regular handler`);
       await handleTextMessage(ctx, text);
     });
     
