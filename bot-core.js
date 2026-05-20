@@ -1,8 +1,5 @@
 // ====================================================================
-// SECTION 1: BOT-CORE.JS - MAIN BOT INITIALIZATION
-// ====================================================================
-// Bot initialization, server setup, launch
-// PRODUCTION READY - WITH RENDER/WEBHOOK SUPPORT & DEBUG ENDPOINTS
+// SECTION 1: BOT-CORE.JS - COMPLETE WORKING VERSION
 // ====================================================================
 
 // ====================================================================
@@ -40,7 +37,7 @@ const express = require('express');
 const path = require('path');
 const { CONFIG } = require('./config');
 const { initStorage, loadData, setupAutoSave, saveAllData, recordTransaction, getUsers, setUsers, getSessions, setSessions, getTransactions } = require('./database');
-const { initUser, isAdmin, formatCurrency, escapeMarkdownV2 } = require('./utils');
+const { initUser, isAdmin, formatCurrency, escapeMarkdownV2, checkKYCAndPIN } = require('./utils');
 const { initializeDeviceHandler, getDeviceHandler, getDeviceCallbacks, getDeviceLockApp, getMiniAppCallbacks } = require('./device-system');
 const { systemTransactionManager, analyticsManager } = require('./transaction-system');
 const {
@@ -63,6 +60,7 @@ const buyCardPins = require('./app/Card pins/buyCardPins');
 const buyExamPins = require('./app/Bill/exam');
 const buyElectricity = require('./app/Bill/light');
 const buyTVSubscription = require('./app/Bill/tv');
+const transactionHistory = require('./app/transactionHistory');
 const { showProfile } = require('./profile');
 
 // ====================================================================
@@ -127,13 +125,6 @@ async function createBot() {
     console.log(`✅ Bot username set to: @${botInfo.username}`);
   } catch (error) {
     console.error('❌ Could not fetch bot username:', error.message);
-    
-    if (error.code === 404 || (error.response && error.response.error_code === 404)) {
-      console.error('\n🔴 CRITICAL: Bot token is invalid or bot does not exist!');
-      console.error('Please check your BOT_TOKEN environment variable');
-      process.exit(1);
-    }
-    
     console.warn('⚠️ Using fallback username');
     bot.options = bot.options || {};
     bot.options.username = 'litewaydatabot';
@@ -148,7 +139,7 @@ async function createBot() {
 }
 
 // ====================================================================
-// SECTION 4: EXPRESS SERVER SETUP (SIMPLIFIED)
+// SECTION 4: EXPRESS SERVER SETUP
 // ====================================================================
 function setupExpressServer(bot) {
   const app = express();
@@ -214,7 +205,7 @@ function setupExpressServer(bot) {
 }
 
 // ====================================================================
-// SECTION 5: COMMAND HANDLERS (SIMPLIFIED)
+// SECTION 5: COMMAND HANDLERS
 // ====================================================================
 async function setupCommands(bot) {
   bot.start(async (ctx) => {
@@ -270,11 +261,76 @@ async function setupCommands(bot) {
 }
 
 // ====================================================================
-// SECTION 6: MENU HANDLERS (SIMPLIFIED)
+// SECTION 6: MENU HANDLERS (ALL BUTTONS)
 // ====================================================================
 async function setupMenuHandlers(bot) {
-  const { checkKYCAndPIN, initUser } = require('./utils');
+  // Device Financing
+  bot.hears('📱 Device Financing', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    if (!await checkKYCAndPIN(userId, ctx)) return;
+    
+    const deviceHandler = getDeviceHandler();
+    if (!deviceHandler) return ctx.reply('❌ System error');
+    
+    deviceHandler.users = getUsers();
+    await deviceHandler.handleDeviceMenu(ctx);
+  });
   
+  // TV Subscription
+  bot.hears('📺 TV Subscription', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    if (!await checkKYCAndPIN(userId, ctx)) return;
+    await buyTVSubscription.handleTVSubscription(ctx, getUsers(), sessionManager, CONFIG);
+  });
+  
+  // Electricity Bill
+  bot.hears('💡 Electricity Bill', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    if (!await checkKYCAndPIN(userId, ctx)) return;
+    await buyElectricity.handleElectricity(ctx, getUsers(), sessionManager, CONFIG);
+  });
+  
+  // Buy Airtime
+  bot.hears('📞 Buy Airtime', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    if (!await checkKYCAndPIN(userId, ctx)) return;
+    await buyAirtime.handleAirtime(ctx, getUsers(), getSessions(), CONFIG, require('./config').NETWORK_CODES);
+  });
+  
+  // Buy Data
+  bot.hears('📡 Buy Data', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    if (!await checkKYCAndPIN(userId, ctx)) return;
+    await buyData.handleData(ctx, getUsers(), sessionManager, CONFIG, require('./config').NETWORK_CODES);
+  });
+  
+  // Card Pins
+  bot.hears('🎫 Card Pins', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    if (!await checkKYCAndPIN(userId, ctx)) return;
+    await buyCardPins.handleCardPinsMenu(ctx, getUsers(), sessionManager, CONFIG);
+  });
+  
+  // Exam Pins
+  bot.hears('📝 Exam Pins', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    if (!await checkKYCAndPIN(userId, ctx)) return;
+    await buyExamPins.handleExamPins(ctx, getUsers(), sessionManager, CONFIG);
+  });
+  
+  // Lite Light
+  bot.hears('⚡ Lite Light', async (ctx) => {
+    await ctx.reply('⚡ Lite Light\n\n🚧 Coming Soon!');
+  });
+  
+  // Money Transfer
   bot.hears('🏦 Money Transfer', async (ctx) => {
     const userId = ctx.from.id.toString();
     await initUser(userId);
@@ -289,21 +345,15 @@ async function setupMenuHandlers(bot) {
       ]) }
     );
   });
-
-  bot.hears('🔄 Restore My Account', async (ctx) => {
-    await handleRestoreButton(ctx);
-  });
-
+  
+  // Wallet Balance
   bot.hears('💰 Wallet Balance', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
     await ctx.reply(`💰 Your balance: ${formatCurrency(user.wallet)}`);
   });
   
-  bot.hears('👤 Profile', async (ctx) => {
-    await showProfile(ctx);
-  });
-  
+  // Deposit Funds
   bot.hears('💳 Deposit Funds', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -334,17 +384,68 @@ async function setupMenuHandlers(bot) {
       ]) }
     );
   });
+  
+  // Transaction History
+  bot.hears('📜 Transaction History', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    await initUser(userId);
+    await transactionHistory.handleHistory(ctx, getUsers(), getTransactions(), CONFIG);
+  });
+  
+  // KYC Status
+  bot.hears('🛂 KYC Status', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const user = await initUser(userId);
+    const statusEmoji = { 'approved': '✅', 'rejected': '❌', 'submitted': '📋' }[user.kycStatus] || '⏳';
+    await ctx.reply(`🛂 KYC STATUS\n\nStatus: ${statusEmoji} ${(user.kycStatus || 'pending').toUpperCase()}`);
+  });
+  
+  // Admin Panel
+  bot.hears('🛠️ Admin Panel', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!isAdmin(userId)) return ctx.reply('❌ Admin only');
+    
+    await ctx.reply(
+      '🛠️ ADMIN PANEL\n\nAdministrator Controls',
+      { parse_mode: 'Markdown', ...Markup.inlineKeyboard([
+        [Markup.button.callback('👥 User Management', 'admin_users')],
+        [Markup.button.callback('💰 Credit User', 'admin_quick_credit')],
+        [Markup.button.callback('📊 Transaction Tracking', 'admin_transaction_tracking')],
+        [Markup.button.callback('🛂 KYC Approvals', 'admin_kyc')],
+        [Markup.button.callback('🏠 Home', 'start')]
+      ]) }
+    );
+  });
+  
+  // Profile
+  bot.hears('👤 Profile', async (ctx) => {
+    await showProfile(ctx);
+  });
+  
+  // Help & Support
+  bot.hears('🆘 Help & Support', async (ctx) => {
+    await ctx.reply(
+      `🆘 HELP & SUPPORT\n\nCommands:\n/start - Main menu\n/setpin 1234 - Set PIN\n/balance - Check balance\n/profile - View profile\n\n📞 Support: @opuenekeke`
+    );
+  });
+  
+  // Restore My Account
+  bot.hears('🔄 Restore My Account', async (ctx) => {
+    await handleRestoreButton(ctx);
+  });
 }
 
 // ====================================================================
 // SECTION 7: CALLBACK HANDLERS
 // ====================================================================
 async function setupCallbackHandlers(bot) {
+  // Bank Transfer
   bot.action('bank_transfer', async (ctx) => {
     await sendMoney.handleSendMoney(ctx, { ...getUsers(), ...userMethods }, transactionMethods);
     await ctx.answerCbQuery();
   });
   
+  // LiteMoni Transfer
   bot.action('litemonie_transfer', async (ctx) => {
     const userId = ctx.from.id.toString();
     const user = await initUser(userId);
@@ -356,6 +457,7 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
+  // Start/Home
   bot.action('start', async (ctx) => {
     try { await ctx.deleteMessage(); } catch (e) {}
     const userId = ctx.from.id.toString();
@@ -385,19 +487,18 @@ async function setupCallbackHandlers(bot) {
     await ctx.answerCbQuery();
   });
   
+  // Upgrade Recovery
   bot.action('upgrade_recovery', async (ctx) => {
     await handleUpgradeRecovery(ctx);
     await ctx.answerCbQuery();
   });
-
+  
   bot.action('cancel_recovery', async (ctx) => {
     await handleCancelRecovery(ctx);
     await ctx.answerCbQuery();
   });
   
-  bot.action('no_action', ctx => ctx.answerCbQuery());
-  
-  // Deposit callbacks
+  // Deposit Callbacks
   bot.action('create_virtual_account', async (ctx) => {
     await depositFunds.handleCreateVirtualAccount(ctx, {
       findById: async (id) => {
@@ -463,6 +564,37 @@ async function setupCallbackHandlers(bot) {
       }
     }, virtualAccounts, bot);
   });
+  
+  // Admin Callbacks
+  bot.action('admin_users', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!isAdmin(userId)) return ctx.answerCbQuery('❌ Admin only');
+    const users = getUsers();
+    const total = Object.keys(users).length;
+    await ctx.reply(`👥 USERS\n\nTotal users: ${total}`);
+    await ctx.answerCbQuery();
+  });
+  
+  bot.action('admin_quick_credit', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!isAdmin(userId)) return ctx.answerCbQuery('❌ Admin only');
+    await ctx.reply('💰 Use command: /credituser [user_id] [amount] [reason]');
+    await ctx.answerCbQuery();
+  });
+  
+  bot.action('admin_transaction_tracking', async (ctx) => {
+    await handleAdminTransactionTracking(ctx);
+    await ctx.answerCbQuery();
+  });
+  
+  bot.action('admin_kyc', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!isAdmin(userId)) return ctx.answerCbQuery('❌ Admin only');
+    await ctx.reply('🛂 KYC Approvals\n\nUse /searchuser to find users');
+    await ctx.answerCbQuery();
+  });
+  
+  bot.action('no_action', ctx => ctx.answerCbQuery());
 }
 
 // ====================================================================
@@ -507,33 +639,28 @@ async function launchBot(useWebhook = false) {
     await setupCallbackHandlers(botInstance);
     
     // ================================================================
-    // SECTION 10.1: TEXT HANDLER - CRITICAL: UPGRADE RECOVERY FIRST
+    // SECTION 10.1: TEXT HANDLER - PROPER ORDER
     // ================================================================
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       
-      // Skip commands
-      if (text.startsWith('/')) {
-        return;
-      }
+      if (text.startsWith('/')) return;
       
       const userId = ctx.from.id.toString();
-      console.log(`📝 Text received: "${text}" from ${userId}`);
+      console.log(`📝 Text: "${text}" from ${userId}`);
 
-      // ========== 1. UPGRADE RECOVERY (HIGHEST PRIORITY) ==========
+      // 1. UPGRADE RECOVERY (HIGHEST PRIORITY)
       const recoverySession = await getUpgradeSession(userId);
-      
       if (recoverySession && recoverySession.action === 'upgrade_recovery') {
-        console.log(`🔄 Upgrade recovery active, routing to recovery handler`);
+        console.log(`🔄 Upgrade recovery active`);
         await processRecoveryInput(ctx, text);
         return;
       }
 
-      // ========== 2. DEPOSIT SESSION ==========
+      // 2. DEPOSIT SESSION
       const depositSession = depositFunds.sessionManager.getSession(userId);
-      
       if (depositSession && (depositSession.action === 'collect_email' || depositSession.action === 'collect_phone')) {
-        console.log(`💰 Deposit session active, routing to deposit handler`);
+        console.log(`💰 Deposit session active`);
         await depositFunds.handleDepositText(ctx, text, {
           findById: async (id) => {
             const users = getUsers();
@@ -553,11 +680,10 @@ async function launchBot(useWebhook = false) {
         return;
       }
       
-      // ========== 3. SENDMONEY SESSION ==========
+      // 3. SENDMONEY SESSION
       const sendMoneySession = sendMoney.sessionManager.getSession(userId);
-      
       if (sendMoneySession) {
-        console.log(`💸 SendMoney session active, routing to sendMoney handler`);
+        console.log(`💸 SendMoney session active`);
         const handled = await sendMoney.handleText(ctx, text, getUsers(), getTransactions());
         if (handled) {
           await saveAllData();
@@ -565,8 +691,8 @@ async function launchBot(useWebhook = false) {
         }
       }
       
-      // ========== 4. NO ACTIVE SESSION ==========
-      console.log(`ℹ️ No active session for ${userId}, using regular handler`);
+      // 4. REGULAR HANDLER
+      console.log(`ℹ️ No active session`);
       await handleTextMessage(ctx, text);
     });
     
