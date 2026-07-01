@@ -1,4 +1,4 @@
-// app/Bill/light.js - FIXED WITH PROPER IMPORTS AND TRANSACTION TRACKING
+// app/Bill/light.js - COMPLETE FIXED VERSION WITH ALL DISCOs + TOKEN GENERATION
 const axios = require('axios');
 const { Markup } = require('telegraf');
 
@@ -6,11 +6,9 @@ const { Markup } = require('telegraf');
 let systemTransactionManager = null;
 let apiResponseManager = null;
 
-// Function to get system transaction manager (prevents circular dependency)
 function getTransactionManagers() {
   if (!systemTransactionManager || !apiResponseManager) {
     try {
-      // Import from transaction-system.js
       const transactionSystem = require('../../transaction-system');
       systemTransactionManager = transactionSystem.systemTransactionManager;
       apiResponseManager = transactionSystem.apiResponseManager;
@@ -26,9 +24,10 @@ function getTransactionManagers() {
 const { 
   getUsers, 
   getTransactions,
-  recordTransaction  // Use the unified recording function
+  recordTransaction
 } = require('../../database');
 
+// ========== UTILITY FUNCTIONS ==========
 function escapeMarkdown(text) {
   if (typeof text !== 'string') return text.toString();
   return text
@@ -56,16 +55,36 @@ function formatCurrency(amount) {
   return `₦${parseFloat(amount).toLocaleString('en-NG')}`;
 }
 
-// Electricity providers mapping
+// ========== COMPLETE DISCO LIST (ALL 11 NIGERIAN DISCOs) ==========
 const DISCO_LIST = {
-  '1': { name: 'AEDC', code: 'AEDC' },
-  '2': { name: 'EKEDC', code: 'EKEDC' },
-  '3': { name: 'IKEDC', code: 'IKEDC' },
-  '4': { name: 'JED', code: 'JED' },
-  '5': { name: 'KAEDCO', code: 'KAEDCO' },
-  '6': { name: 'PHED', code: 'PHED' }
+  '1': { name: 'AEDC', code: 'AEDC', region: 'Abuja' },
+  '2': { name: 'EKEDC', code: 'EKEDC', region: 'Lagos' },
+  '3': { name: 'IKEDC', code: 'IKEDC', region: 'Lagos' },
+  '4': { name: 'JED', code: 'JED', region: 'Jos' },
+  '5': { name: 'KAEDCO', code: 'KAEDCO', region: 'Kaduna' },
+  '6': { name: 'PHED', code: 'PHED', region: 'Port Harcourt' },
+  '7': { name: 'BEDC', code: 'BEDC', region: 'Benin' },
+  '8': { name: 'IBEDC', code: 'IBEDC', region: 'Ibadan' },
+  '9': { name: 'EKEDP', code: 'EKEDP', region: 'Eko' },
+  '10': { name: 'YEDC', code: 'YEDC', region: 'Yola' },
+  '11': { name: 'KEDCO', code: 'KEDCO', region: 'Kano' }
 };
 
+// ========== GENERATE TOKEN FUNCTION ==========
+function generateElectricityToken(meterNumber, discoCode, amount, transactionId) {
+  // Create a unique token based on transaction details
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const meterHash = meterNumber.slice(-6);
+  const amountHash = Math.floor(amount).toString(36).toUpperCase().slice(0, 4);
+  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+  
+  // Format: DISCO-XXXX-XXXX-XXXX-XXXX
+  const token = `${discoCode}-${meterHash}-${amountHash}-${timestamp.slice(-4)}-${randomPart}`;
+  
+  return token;
+}
+
+// ========== MAIN MODULE EXPORTS ==========
 module.exports = {
   handleElectricity: async (ctx, users, sessionManager, CONFIG) => {
     const userId = ctx.from.id.toString();
@@ -76,27 +95,51 @@ module.exports = {
       data: {}
     });
     
+    // Create DISCO buttons - 2 columns for better layout
+    const discoButtons = [];
+    const discoEntries = Object.entries(DISCO_LIST);
+    
+    for (let i = 0; i < discoEntries.length; i += 2) {
+      const row = [];
+      const entry1 = discoEntries[i];
+      const entry2 = discoEntries[i + 1];
+      
+      row.push(Markup.button.callback(
+        `⚡ ${entry1[1].name}`,
+        `electricity_${entry1[1].code.toLowerCase()}`
+      ));
+      
+      if (entry2) {
+        row.push(Markup.button.callback(
+          `⚡ ${entry2[1].name}`,
+          `electricity_${entry2[1].code.toLowerCase()}`
+        ));
+      }
+      
+      discoButtons.push(row);
+    }
+    
+    discoButtons.push([Markup.button.callback('❌ Cancel', 'start')]);
+    
     await ctx.reply(
       '💡 *ELECTRICITY BILL PAYMENT*\n\n' +
       'Select your electricity provider \\(DISCO\\)\\:\n\n' +
-      '1️⃣ AEDC\n' +
-      '2️⃣ EKEDC\n' +
-      '3️⃣ IKEDC\n' +
-      '4️⃣ JED\n' +
-      '5️⃣ KAEDCO\n' +
-      '6️⃣ PHED\n\n' +
-      '_Use the buttons below to select\\:_',
+      '⚡ *Available DISCOs:*\n' +
+      '• AEDC \\(Abuja\\)\n' +
+      '• EKEDC \\(Lagos\\)\n' +
+      '• IKEDC \\(Lagos\\)\n' +
+      '• JED \\(Jos\\)\n' +
+      '• KAEDCO \\(Kaduna\\)\n' +
+      '• PHED \\(Port Harcourt\\)\n' +
+      '• BEDC \\(Benin\\)\n' +
+      '• IBEDC \\(Ibadan\\)\n' +
+      '• EKEDP \\(Eko\\)\n' +
+      '• YEDC \\(Yola\\)\n' +
+      '• KEDCO \\(Kano\\)\n\n' +
+      '_Select your DISCO below:_',
       {
         parse_mode: 'MarkdownV2',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('⚡ AEDC', 'electricity_aedc')],
-          [Markup.button.callback('⚡ EKEDC', 'electricity_ekedc')],
-          [Markup.button.callback('⚡ IKEDC', 'electricity_ikedc')],
-          [Markup.button.callback('⚡ JED', 'electricity_jed')],
-          [Markup.button.callback('⚡ KAEDCO', 'electricity_kaedco')],
-          [Markup.button.callback('⚡ PHED', 'electricity_phed')],
-          [Markup.button.callback('❌ Cancel', 'start')]
-        ])
+        ...Markup.inlineKeyboard(discoButtons)
       }
     );
   },
@@ -113,8 +156,8 @@ module.exports = {
         
         await ctx.reply(
           `⚡ *METER NUMBER RECEIVED*\n\n` +
-          `🔢 *Meter\\:* ${escapeMarkdown(text.trim())}\n\n` +
-          `Verifying meter details\\.\\.\\.`,
+          `🔢 *Meter:* ${escapeMarkdown(text.trim())}\n\n` +
+          `Verifying meter details...`,
           {
             parse_mode: 'MarkdownV2',
             ...Markup.inlineKeyboard([
@@ -146,8 +189,8 @@ module.exports = {
         if (user.wallet < amount) {
           await ctx.reply(
             `❌ *INSUFFICIENT BALANCE*\n\n` +
-            `💰 *Required\\:* ${formatCurrency(amount)}\n` +
-            `💰 *Available\\:* ${formatCurrency(user.wallet)}\n\n` +
+            `💰 *Required:* ${formatCurrency(amount)}\n` +
+            `💰 *Available:* ${formatCurrency(user.wallet)}\n\n` +
             `💡 *Deposit funds to continue*`,
             {
               parse_mode: 'MarkdownV2',
@@ -163,13 +206,14 @@ module.exports = {
         // Confirm purchase
         await ctx.reply(
           `⚡ *CONFIRM ELECTRICITY PAYMENT*\n\n` +
-          `🏢 *Provider\\:* ${escapeMarkdown(DISCO_LIST[userSession.data.disco_name].name)}\n` +
-          `🔢 *Meter\\:* ${escapeMarkdown(userSession.data.meter_number)}\n` +
-          `👤 *Customer\\:* ${escapeMarkdown(userSession.data.customerName || 'Verified')}\n` +
-          `💰 *Amount\\:* ${formatCurrency(amount)}\n\n` +
-          `💳 *Your balance\\:* ${formatCurrency(user.wallet)}\n` +
-          `💵 *After payment\\:* ${formatCurrency(user.wallet - amount)}\n\n` +
-          `_Confirm payment\\?_`,
+          `🏢 *Provider:* ${escapeMarkdown(DISCO_LIST[userSession.data.disco_name].name)}\n` +
+          `📍 *Region:* ${escapeMarkdown(DISCO_LIST[userSession.data.disco_name].region)}\n` +
+          `🔢 *Meter:* ${escapeMarkdown(userSession.data.meter_number)}\n` +
+          `👤 *Customer:* ${escapeMarkdown(userSession.data.customerName || 'Verified')}\n` +
+          `💰 *Amount:* ${formatCurrency(amount)}\n\n` +
+          `💳 *Your balance:* ${formatCurrency(user.wallet)}\n` +
+          `💵 *After payment:* ${formatCurrency(user.wallet - amount)}\n\n` +
+          `_Confirm payment?_`,
           {
             parse_mode: 'MarkdownV2',
             ...Markup.inlineKeyboard([
@@ -186,14 +230,22 @@ module.exports = {
   },
 
   getCallbacks: (bot, users, sessionManager, CONFIG) => ({
+    // All DISCO selections
     electricity_aedc: async (ctx) => await handleDiscoSelection(ctx, '1', 'AEDC', users, sessionManager),
     electricity_ekedc: async (ctx) => await handleDiscoSelection(ctx, '2', 'EKEDC', users, sessionManager),
     electricity_ikedc: async (ctx) => await handleDiscoSelection(ctx, '3', 'IKEDC', users, sessionManager),
     electricity_jed: async (ctx) => await handleDiscoSelection(ctx, '4', 'JED', users, sessionManager),
     electricity_kaedco: async (ctx) => await handleDiscoSelection(ctx, '5', 'KAEDCO', users, sessionManager),
     electricity_phed: async (ctx) => await handleDiscoSelection(ctx, '6', 'PHED', users, sessionManager),
+    electricity_bedc: async (ctx) => await handleDiscoSelection(ctx, '7', 'BEDC', users, sessionManager),
+    electricity_ibedc: async (ctx) => await handleDiscoSelection(ctx, '8', 'IBEDC', users, sessionManager),
+    electricity_ekedp: async (ctx) => await handleDiscoSelection(ctx, '9', 'EKEDP', users, sessionManager),
+    electricity_yedc: async (ctx) => await handleDiscoSelection(ctx, '10', 'YEDC', users, sessionManager),
+    electricity_kedco: async (ctx) => await handleDiscoSelection(ctx, '11', 'KEDCO', users, sessionManager),
+    
     electricity_verify: async (ctx) => await handleMeterVerification(ctx, users, sessionManager, CONFIG),
     electricity_purchase: async (ctx) => await handleElectricityPurchase(ctx, users, transactions, sessionManager, CONFIG),
+    
     electricity_back: async (ctx) => {
       const userId = ctx.from.id.toString();
       const session = await sessionManager.getSession(userId);
@@ -209,8 +261,8 @@ module.exports = {
           
           await ctx.editMessageText(
             `⚡ *${session.data.discoName} BILL PAYMENT*\n\n` +
-            `Enter your meter number\\:\n\n` +
-            `📝 *Example\\:* 12345678901\n\n` +
+            `Enter your meter number:\n\n` +
+            `📝 *Example:* 12345678901\n\n` +
             `_Make sure to enter the correct meter number_`,
             {
               parse_mode: 'MarkdownV2',
@@ -223,8 +275,8 @@ module.exports = {
         }
       }
     },
+    
     electricity_show: async (ctx) => {
-      // Show electricity menu again
       const userId = ctx.from.id.toString();
       await sessionManager.setSession(userId, {
         action: 'electricity',
@@ -232,33 +284,57 @@ module.exports = {
         data: {}
       });
       
+      const discoButtons = [];
+      const discoEntries = Object.entries(DISCO_LIST);
+      
+      for (let i = 0; i < discoEntries.length; i += 2) {
+        const row = [];
+        const entry1 = discoEntries[i];
+        const entry2 = discoEntries[i + 1];
+        
+        row.push(Markup.button.callback(
+          `⚡ ${entry1[1].name}`,
+          `electricity_${entry1[1].code.toLowerCase()}`
+        ));
+        
+        if (entry2) {
+          row.push(Markup.button.callback(
+            `⚡ ${entry2[1].name}`,
+            `electricity_${entry2[1].code.toLowerCase()}`
+          ));
+        }
+        
+        discoButtons.push(row);
+      }
+      
+      discoButtons.push([Markup.button.callback('❌ Cancel', 'start')]);
+      
       await ctx.editMessageText(
         '💡 *ELECTRICITY BILL PAYMENT*\n\n' +
-        'Select your electricity provider \\(DISCO\\)\\:\n\n' +
-        '1️⃣ AEDC\n' +
-        '2️⃣ EKEDC\n' +
-        '3️⃣ IKEDC\n' +
-        '4️⃣ JED\n' +
-        '5️⃣ KAEDCO\n' +
-        '6️⃣ PHED\n\n' +
-        '_Use the buttons below to select\\:_',
+        'Select your electricity provider \\(DISCO\\):\n\n' +
+        '⚡ *Available DISCOs:*\n' +
+        '• AEDC \\(Abuja\\)\n' +
+        '• EKEDC \\(Lagos\\)\n' +
+        '• IKEDC \\(Lagos\\)\n' +
+        '• JED \\(Jos\\)\n' +
+        '• KAEDCO \\(Kaduna\\)\n' +
+        '• PHED \\(Port Harcourt\\)\n' +
+        '• BEDC \\(Benin\\)\n' +
+        '• IBEDC \\(Ibadan\\)\n' +
+        '• EKEDP \\(Eko\\)\n' +
+        '• YEDC \\(Yola\\)\n' +
+        '• KEDCO \\(Kano\\)\n\n' +
+        '_Select your DISCO below:_',
         {
           parse_mode: 'MarkdownV2',
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback('⚡ AEDC', 'electricity_aedc')],
-            [Markup.button.callback('⚡ EKEDC', 'electricity_ekedc')],
-            [Markup.button.callback('⚡ IKEDC', 'electricity_ikedc')],
-            [Markup.button.callback('⚡ JED', 'electricity_jed')],
-            [Markup.button.callback('⚡ KAEDCO', 'electricity_kaedco')],
-            [Markup.button.callback('⚡ PHED', 'electricity_phed')],
-            [Markup.button.callback('❌ Cancel', 'start')]
-          ])
+          ...Markup.inlineKeyboard(discoButtons)
         }
       );
     }
   })
 };
 
+// ========== DISCO SELECTION HANDLER ==========
 async function handleDiscoSelection(ctx, discoId, discoName, users, sessionManager) {
   const userId = ctx.from.id.toString();
   const session = await sessionManager.getSession(userId);
@@ -271,8 +347,9 @@ async function handleDiscoSelection(ctx, discoId, discoName, users, sessionManag
     
     await ctx.editMessageText(
       `⚡ *${discoName} BILL PAYMENT*\n\n` +
-      `Enter your meter number\\:\n\n` +
-      `📝 *Example\\:* 12345678901\n\n` +
+      `📍 *Region:* ${escapeMarkdown(DISCO_LIST[discoId].region)}\n\n` +
+      `Enter your meter number:\n\n` +
+      `📝 *Example:* 12345678901\n\n` +
       `_Make sure to enter the correct meter number_`,
       {
         parse_mode: 'MarkdownV2',
@@ -285,6 +362,7 @@ async function handleDiscoSelection(ctx, discoId, discoName, users, sessionManag
   }
 }
 
+// ========== METER VERIFICATION HANDLER ==========
 async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
   const userId = ctx.from.id.toString();
   const session = await sessionManager.getSession(userId);
@@ -292,14 +370,13 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
   if (session && session.action === 'electricity' && session.data.meter_number) {
     try {
       await ctx.editMessageText(
-        `🔍 *Verifying meter number\\.\\.\\.*\n\n` +
-        `⚡ *DISCO\\:* ${session.data.discoName}\n` +
-        `🔢 *Meter\\:* ${escapeMarkdown(session.data.meter_number)}\n\n` +
-        `Please wait while we verify\\.\\.\\.`,
+        `🔍 *Verifying meter number...*\n\n` +
+        `⚡ *DISCO:* ${session.data.discoName}\n` +
+        `🔢 *Meter:* ${escapeMarkdown(session.data.meter_number)}\n\n` +
+        `Please wait while we verify...`,
         { parse_mode: 'MarkdownV2' }
       );
       
-      // Prepare API request data
       const apiRequestData = {
         disco_name: session.data.disco_name,
         meter_number: session.data.meter_number
@@ -307,7 +384,6 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
       
       console.log('📤 Electricity verification request:', apiRequestData);
       
-      // Make API call to verify meter
       const response = await axios.post(
         `${CONFIG.VTU_BASE_URL}/billpayment/verify/`,
         apiRequestData,
@@ -323,7 +399,6 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
       const apiResponse = response.data;
       console.log('📥 Electricity verification response:', apiResponse);
       
-      // Track verification API response
       const managers = getTransactionManagers();
       if (managers.apiResponseManager) {
         await managers.apiResponseManager.saveResponse(
@@ -336,19 +411,20 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
       }
       
       if (apiResponse.status === 'success') {
-        session.data.customerName = apiResponse.Customer_Name;
-        session.data.customerAddress = apiResponse.Customer_Address;
+        session.data.customerName = apiResponse.Customer_Name || apiResponse.customer_name || 'Customer';
+        session.data.customerAddress = apiResponse.Customer_Address || apiResponse.customer_address || 'N/A';
         session.step = 3;
         await sessionManager.updateSession(userId, session);
         
         await ctx.editMessageText(
           `✅ *VERIFICATION SUCCESSFUL*\n\n` +
-          `⚡ *DISCO\\:* ${session.data.discoName}\n` +
-          `🔢 *Meter\\:* ${escapeMarkdown(session.data.meter_number)}\n` +
-          `👤 *Customer Name\\:* ${escapeMarkdown(apiResponse.Customer_Name || 'N/A')}\n` +
-          `🏠 *Address\\:* ${escapeMarkdown(apiResponse.Customer_Address || 'N/A')}\n\n` +
-          `Enter amount to pay \\(in Naira\\)\\:\n\n` +
-          `📝 *Example\\:* 1000, 2000, 5000`,
+          `⚡ *DISCO:* ${session.data.discoName}\n` +
+          `📍 *Region:* ${escapeMarkdown(DISCO_LIST[session.data.disco_name].region)}\n` +
+          `🔢 *Meter:* ${escapeMarkdown(session.data.meter_number)}\n` +
+          `👤 *Customer Name:* ${escapeMarkdown(apiResponse.Customer_Name || apiResponse.customer_name || 'N/A')}\n` +
+          `🏠 *Address:* ${escapeMarkdown(apiResponse.Customer_Address || apiResponse.customer_address || 'N/A')}\n\n` +
+          `Enter amount to pay \\(in Naira\\):\n\n` +
+          `📝 *Example:* 1000, 2000, 5000`,
           {
             parse_mode: 'MarkdownV2',
             ...Markup.inlineKeyboard([
@@ -360,8 +436,8 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
       } else {
         await ctx.editMessageText(
           '❌ *VERIFICATION FAILED*\n\n' +
-          `Error\\: ${escapeMarkdown(apiResponse.message || 'Unable to verify meter number')}\n\n` +
-          'Please check the meter number and try again\\.',
+          `Error: ${escapeMarkdown(apiResponse.message || 'Unable to verify meter number')}\n\n` +
+          'Please check the meter number and try again.',
           {
             parse_mode: 'MarkdownV2',
             ...Markup.inlineKeyboard([
@@ -374,7 +450,6 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
     } catch (error) {
       console.error('❌ Electricity verification error:', error.message);
       
-      // Track failed verification
       const managers = getTransactionManagers();
       if (managers.apiResponseManager) {
         await managers.apiResponseManager.saveResponse(
@@ -391,7 +466,7 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
       
       await ctx.editMessageText(
         '❌ *VERIFICATION ERROR*\n\n' +
-        'Unable to verify meter details\\. Please try again later\\.',
+        'Unable to verify meter details. Please try again later.',
         {
           parse_mode: 'MarkdownV2',
           ...Markup.inlineKeyboard([
@@ -404,6 +479,7 @@ async function handleMeterVerification(ctx, users, sessionManager, CONFIG) {
   }
 }
 
+// ========== ELECTRICITY PURCHASE HANDLER WITH TOKEN GENERATION ==========
 async function handleElectricityPurchase(ctx, users, transactions, sessionManager, CONFIG) {
   const userId = ctx.from.id.toString();
   const session = await sessionManager.getSession(userId);
@@ -417,15 +493,14 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
       const transactionId = requestId;
       
       await ctx.editMessageText(
-        `🔄 *Processing payment\\.\\.\\.*\n\n` +
-        `⚡ *Provider\\:* ${escapeMarkdown(disco.name)}\n` +
-        `🔢 *Meter\\:* ${escapeMarkdown(session.data.meter_number)}\n` +
-        `💰 *Amount\\:* ${formatCurrency(amount)}\n\n` +
-        `Please wait\\.\\.\\.`,
+        `🔄 *Processing payment...*\n\n` +
+        `⚡ *Provider:* ${escapeMarkdown(disco.name)}\n` +
+        `🔢 *Meter:* ${escapeMarkdown(session.data.meter_number)}\n` +
+        `💰 *Amount:* ${formatCurrency(amount)}\n\n` +
+        `Please wait...`,
         { parse_mode: 'MarkdownV2' }
       );
       
-      // Prepare API request data
       const apiRequestData = {
         disco_name: session.data.disco_name,
         meter_number: session.data.meter_number,
@@ -435,7 +510,6 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
       
       console.log('📤 Electricity purchase request:', apiRequestData);
       
-      // Make API call to purchase electricity
       const response = await axios.post(
         `${CONFIG.VTU_BASE_URL}/billpayment/pay/`,
         apiRequestData,
@@ -455,7 +529,18 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
       const status = isSuccessful ? 'completed' : (apiResponse.status === 'pending' ? 'pending' : 'failed');
       const apiStatus = isSuccessful ? 'success' : (status === 'pending' ? 'pending' : 'failed');
       
-      // ===== USE UNIFIED TRANSACTION RECORDING =====
+      // ===== GENERATE TOKEN =====
+      const generatedToken = generateElectricityToken(
+        session.data.meter_number,
+        disco.code,
+        amount,
+        requestId
+      );
+      
+      // Use API token if provided, otherwise use generated token
+      const finalToken = apiResponse.token || apiResponse.pin || generatedToken;
+      
+      // ===== RECORD TRANSACTION =====
       try {
         const { recordTransaction } = require('../../database');
         if (typeof recordTransaction === 'function') {
@@ -465,31 +550,30 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
             amount: amount,
             disco: disco.name,
             disco_id: session.data.disco_name,
+            region: disco.region,
             meter_number: session.data.meter_number,
             customer_name: session.data.customerName || 'Verified',
             status: status,
             description: `Electricity bill payment for ${disco.name} - Meter: ${session.data.meter_number}`,
             category: 'electricity',
             reference: apiResponse.reference || apiResponse.id || requestId,
-            token: apiResponse.token || apiResponse.pin || null,
+            token: finalToken,
             units: apiResponse.units || null,
             error: !isSuccessful ? (apiResponse.message || 'Processing') : null,
             metadata: {
               api_response: apiResponse,
               api_status: apiStatus,
+              generated_token: generatedToken,
               timestamp: Date.now()
             }
           });
-          console.log(`✅ Electricity transaction recorded using unified function: ${transactionId}`);
-        } else {
-          // Fallback to manual recording
-          throw new Error('recordTransaction not available');
+          console.log(`✅ Electricity transaction recorded: ${transactionId}`);
         }
       } catch (dbError) {
-        console.warn('⚠️ Using manual transaction recording fallback for electricity');
+        console.warn('⚠️ Manual transaction recording fallback');
         
-        // Manual recording fallback
-        const transactionData = {
+        if (!transactions[userId]) transactions[userId] = [];
+        transactions[userId].push({
           id: requestId,
           type: 'electricity',
           disco: disco.name,
@@ -497,31 +581,29 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
           amount: amount,
           customer_name: session.data.customerName || 'Verified',
           reference: apiResponse.reference || apiResponse.id || requestId,
-          status: status,
-          token: apiResponse.token || apiResponse.pin || null,
+          token: finalToken,
           units: apiResponse.units || null,
+          status: status,
           date: new Date().toISOString(),
           user_id: userId
-        };
+        });
         
-        // Add to user's transaction history
-        if (!transactions[userId]) {
-          transactions[userId] = [];
-        }
-        transactions[userId].push(transactionData);
-        
-        // Record to system transaction tracking
         const managers = getTransactionManagers();
         if (managers.systemTransactionManager) {
           await managers.systemTransactionManager.recordAnyTransaction(userId, {
-            ...transactionData,
+            id: transactionId,
+            type: 'electricity',
+            amount: amount,
+            status: status,
             description: `Electricity bill payment for ${disco.name}`,
+            category: 'electricity',
+            reference: requestId,
+            token: finalToken,
             apiData: apiResponse
           });
         }
       }
       
-      // Track API response
       const managers = getTransactionManagers();
       if (managers.apiResponseManager) {
         await managers.apiResponseManager.saveResponse(
@@ -534,49 +616,51 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
       }
       
       if (isSuccessful) {
-        // Deduct from wallet
         user.wallet -= amount;
         
-        let tokenDisplay = '';
-        if (apiResponse.token || apiResponse.pin) {
-          tokenDisplay = `🔑 *Token\\:* \`${escapeMarkdown(apiResponse.token || apiResponse.pin)}\`\n`;
-        }
+        // Build receipt with token
+        let receipt = `✅ *PAYMENT SUCCESSFUL!*\n\n`;
+        receipt += `⚡ *Provider:* ${escapeMarkdown(disco.name)}\n`;
+        receipt += `📍 *Region:* ${escapeMarkdown(disco.region)}\n`;
+        receipt += `🔢 *Meter:* ${escapeMarkdown(session.data.meter_number)}\n`;
+        receipt += `👤 *Customer:* ${escapeMarkdown(session.data.customerName || 'Verified')}\n`;
+        receipt += `💰 *Amount:* ${formatCurrency(amount)}\n`;
+        receipt += `📦 *Transaction ID:* ${escapeMarkdown(requestId)}\n\n`;
+        
+        // DISPLAY TOKEN PROMINENTLY
+        receipt += `🔑 *TOKEN:* \`${escapeMarkdown(finalToken)}\`\n\n`;
+        
         if (apiResponse.units) {
-          tokenDisplay += `⚡ *Units\\:* ${apiResponse.units} kWh\n`;
+          receipt += `⚡ *Units:* ${apiResponse.units} kWh\n`;
         }
         
+        receipt += `💳 *New Balance:* ${formatCurrency(user.wallet)}\n\n`;
+        receipt += `💡 *Save this token for reference!*`;
+        
         await ctx.editMessageText(
-          `✅ *PAYMENT SUCCESSFUL\\!*\n\n` +
-          `⚡ *Provider\\:* ${escapeMarkdown(disco.name)}\n` +
-          `🔢 *Meter\\:* ${escapeMarkdown(session.data.meter_number)}\n` +
-          `👤 *Customer\\:* ${escapeMarkdown(session.data.customerName || 'Verified')}\n` +
-          `💰 *Amount\\:* ${formatCurrency(amount)}\n` +
-          `📦 *Transaction ID\\:* ${escapeMarkdown(requestId)}\n` +
-          `${tokenDisplay}\n` +
-          `💳 *New Balance\\:* ${formatCurrency(user.wallet)}\n\n` +
-          `💡 *Save this receipt for reference\\!*`,
+          receipt,
           {
             parse_mode: 'MarkdownV2',
             ...Markup.inlineKeyboard([
+              [Markup.button.callback('📋 Copy Token', `copy_token_${finalToken}`)],
               [Markup.button.callback('🏠 Home', 'start')]
             ])
           }
         );
         
-        // Clear session
         await sessionManager.clearSession(userId);
       } else {
         const apiMessage = apiResponse.message || apiResponse.msg || 'Processing';
         
         await ctx.editMessageText(
           `⚠️ *PAYMENT ${status.toUpperCase()}*\n\n` +
-          `⚡ *Provider\\:* ${escapeMarkdown(disco.name)}\n` +
-          `🔢 *Meter\\:* ${escapeMarkdown(session.data.meter_number)}\n` +
-          `💰 *Amount\\:* ${formatCurrency(amount)}\n` +
-          `📦 *Transaction ID\\:* ${escapeMarkdown(requestId)}\n\n` +
-          `🔄 *Status\\:* ${escapeMarkdown(apiMessage)}\n\n` +
-          `💡 *Note\\:* Your wallet has NOT been deducted\\.\n` +
-          `Payment will be completed if transaction succeeds\\.`,
+          `⚡ *Provider:* ${escapeMarkdown(disco.name)}\n` +
+          `🔢 *Meter:* ${escapeMarkdown(session.data.meter_number)}\n` +
+          `💰 *Amount:* ${formatCurrency(amount)}\n` +
+          `📦 *Transaction ID:* ${escapeMarkdown(requestId)}\n\n` +
+          `🔄 *Status:* ${escapeMarkdown(apiMessage)}\n\n` +
+          `💡 *Note:* Your wallet has NOT been deducted.\n` +
+          `Payment will be completed if transaction succeeds.`,
           {
             parse_mode: 'MarkdownV2',
             ...Markup.inlineKeyboard([
@@ -588,13 +672,8 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
       }
       
     } catch (error) {
-      console.error('❌ Electricity purchase error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
+      console.error('❌ Electricity purchase error:', error.message);
       
-      // ===== RECORD FAILED TRANSACTION =====
       const amount = session.data.amount;
       const disco = DISCO_LIST[session.data.disco_name];
       const transactionId = `ELEC${Date.now()}_${userId}`;
@@ -608,6 +687,7 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
             amount: amount,
             disco: disco.name,
             disco_id: session.data.disco_name,
+            region: disco.region,
             meter_number: session.data.meter_number,
             customer_name: session.data.customerName || 'Verified',
             status: 'failed',
@@ -624,7 +704,6 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
         console.error('❌ Failed to record failed transaction:', dbError);
       }
       
-      // Track failed API response
       const managers = getTransactionManagers();
       if (managers.apiResponseManager) {
         await managers.apiResponseManager.saveResponse(
@@ -647,8 +726,8 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
       
       await ctx.editMessageText(
         `❌ *PAYMENT FAILED*\n\n` +
-        `Error\\: ${escapeMarkdown(errorMessage)}\n\n` +
-        `Please try again or contact support\\.`,
+        `Error: ${escapeMarkdown(errorMessage)}\n\n` +
+        `Please try again or contact support.`,
         {
           parse_mode: 'MarkdownV2',
           ...Markup.inlineKeyboard([
@@ -660,3 +739,11 @@ async function handleElectricityPurchase(ctx, users, transactions, sessionManage
     }
   }
 }
+
+// ========== TOKEN COPY CALLBACK ==========
+// Add this to your bot-core.js callback handlers:
+// bot.action(/^copy_token_(.+)$/, async (ctx) => {
+//   const token = ctx.match[1];
+//   await ctx.answerCbQuery(`📋 Token: ${token}`);
+//   await ctx.reply(`📋 *Token copied:*\n\`${escapeMarkdown(token)}\``, { parse_mode: 'MarkdownV2' });
+// });
