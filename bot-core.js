@@ -1120,6 +1120,12 @@ async function setupCallbackHandlers(bot) {
   const buyExamPins = require('./app/Bill/exam');
   const buyElectricity = require('./app/Bill/light');
   const buyTVSubscription = require('./app/Bill/tv');
+
+  bot.action(/^copy_token_(.+)$/, async (ctx) => {
+  const token = ctx.match[1];
+  await ctx.answerCbQuery(`📋 Token copied!`);
+  await ctx.reply(`📋 *Token:*\n\`${token}\``, { parse_mode: 'MarkdownV2' });
+});
   
   // ================================================================
   // SECTION 7.1: MODULE CALLBACKS REGISTRATION
