@@ -2,6 +2,55 @@
 // BOOTSTRAPPER - Just starts the bot with Render support
 // ==================================================
 
+// ====================================================================
+// FIX: FORCE LOGGING TO FLUSH IMMEDIATELY ON RENDER
+// ====================================================================
+// Add this at the VERY TOP before anything else
+if (process.stdout._handle) {
+  process.stdout._handle.setBlocking(true);
+}
+if (process.stderr._handle) {
+  process.stderr._handle.setBlocking(true);
+}
+
+// Override console methods to force flush
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+const originalInfo = console.info;
+
+console.log = function(...args) {
+  originalLog.apply(console, args);
+  if (process.stdout._handle) {
+    process.stdout._handle.setBlocking(true);
+  }
+};
+
+console.error = function(...args) {
+  originalError.apply(console, args);
+  if (process.stderr._handle) {
+    process.stderr._handle.setBlocking(true);
+  }
+};
+
+console.warn = function(...args) {
+  originalWarn.apply(console, args);
+  if (process.stderr._handle) {
+    process.stderr._handle.setBlocking(true);
+  }
+};
+
+console.info = function(...args) {
+  originalInfo.apply(console, args);
+  if (process.stdout._handle) {
+    process.stdout._handle.setBlocking(true);
+  }
+};
+
+// ====================================================================
+// END OF LOGGING FIX
+// ====================================================================
+
 require('dotenv').config();
 const express = require('express');
 
