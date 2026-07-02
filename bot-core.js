@@ -1882,6 +1882,34 @@ async function launchBot(useWebhook = false) {
     // ================================================================
     // SECTION 10.1: TEXT HANDLER (ROUTES ALL TEXT INPUTS)
     // ================================================================
+
+// ========== ADD THIS MIDDLEWARE FOR LOGGING ALL USER ACTIVITY ==========
+botInstance.use(async (ctx, next) => {
+  try {
+    const userId = ctx.from?.id;
+    const username = ctx.from?.username || 'no-username';
+    const firstName = ctx.from?.first_name || '';
+    
+    // Log different types of updates
+    if (ctx.message) {
+      const text = ctx.message.text || '[non-text message]';
+      console.log(`📩 [MESSAGE] User: ${userId} (@${username}) | Text: "${text}"`);
+    } else if (ctx.callbackQuery) {
+      console.log(`🔘 [CALLBACK] User: ${userId} (@${username}) | Data: "${ctx.callbackQuery.data}"`);
+    } else if (ctx.inlineQuery) {
+      console.log(`🔍 [INLINE] User: ${userId} (@${username}) | Query: "${ctx.inlineQuery.query}"`);
+    } else {
+      console.log(`📩 [UPDATE] User: ${userId} (@${username}) | Type: ${ctx.updateType || 'unknown'}`);
+    }
+    
+    await next();
+  } catch (error) {
+    console.error('❌ Logging middleware error:', error.message);
+    await next();
+  }
+});
+// ========== END OF LOGGING MIDDLEWARE ==========
+   
     botInstance.on('text', async (ctx) => {
       const text = ctx.message.text.trim();
       if (text.startsWith('/')) return;
